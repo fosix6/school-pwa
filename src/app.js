@@ -1,5 +1,5 @@
 // ===== CONFIGURATION =====
-// ⚠️ REPLACE WITH YOUR APPS SCRIPT URL OR USE {{APPS_SCRIPT_URL}} FOR BUILD
+// ⚠️ REPLACE WITH YOUR APPS SCRIPT URL
 const API_URL = '{{APPS_SCRIPT_URL}}';
 
 const CONFIG = {
@@ -16,30 +16,68 @@ let state = {
     piket: [],
     pendingActions: [],
     isOnline: navigator.onLine,
-    view: { screen: 'home', instanceId: null, tab: 'attendance' },
-    templates: [],
-    instances: [],
 };
 
-// ===== STORAGE KEYS =====
-const STORAGE_KEY = 'school-manager-data-v2';
+// ===== DOM REFS =====
+const $ = (id) => document.getElementById(id);
+const els = {
+    classSelector: $('class-selector'),
+    dateSelector: $('date-selector'),
+    studentList: $('student-list'),
+    piketList: $('piket-list'),
+    piketSection: $('piket-section'),
+    statsSummary: $('stats-summary'),
+    statHadir: $('stat-hadir'),
+    statAbsen: $('stat-absen'),
+    statSakit: $('stat-sakit'),
+    statIzin: $('stat-izin'),
+    whatsappBtn: $('whatsapp-btn'),
+    connectionStatus: $('connection-status'),
+    offlineBanner: $('offline-banner'),
+    pendingCounter: $('pending-counter'),
+    historyContainer: $('history-container'),
+    historyDate: $('history-date'),
+    historyLoadBtn: $('history-load-btn'),
+    refreshBtn: $('refresh-btn'),
+    csvUpload: $('csv-upload'),
+    uploadCsvBtn: $('upload-csv-btn'),
+    uploadStatus: $('upload-status'),
+    clearCacheBtn: $('clear-cache-btn'),
+};
 
-function loadData() {
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return { templates: [], instances: [] };
-        return JSON.parse(raw);
-    } catch { return { templates: [], instances: [] }; }
-}
+// ========================================
+// PIKET SCHEDULE BUILDER (Admin Panel)
+// ========================================
 
-function saveData() {
-    try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ templates: state.templates, instances: state.instances }));
-    } catch (e) { console.error('Save error', e); }
-}
+const piketEls = {
+    classSelector: document.getElementById('piket-class-selector'),
+    studentSearch: document.getElementById('piket-student-search'),
+    studentList: document.getElementById('piket-student-list'),
+    selectedList: document.getElementById('piket-selected-students'),
+    generateBtn: document.getElementById('piket-generate-btn'),
+    saveBtn: document.getElementById('piket-save-btn'),
+    clearBtn: document.getElementById('piket-clear-btn'),
+    status: document.getElementById('piket-status'),
+    // Day slots
+    monList: document.getElementById('piket-mon-list'),
+    tueList: document.getElementById('piket-tue-list'),
+    wedList: document.getElementById('piket-wed-list'),
+    thuList: document.getElementById('piket-thu-list'),
+    friList: document.getElementById('piket-fri-list'),
+};
 
-// ===== UID =====
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+let piketState = {
+    kelas: '',
+    allStudents: [],
+    // Each day stores selected students
+    monday: [],
+    tuesday: [],
+    wednesday: [],
+    thursday: [],
+    friday: [],
+    // For search/filter
+    filteredStudents: [],
+};
 
 // ===== HELPERS =====
 function todayISO() {
@@ -54,13 +92,6 @@ function formatDate(iso) {
     return new Date(y, m - 1, d).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function weekdayNameFromISO(iso) {
-    const [y, m, d] = iso.split('-').map(Number);
-    const date = new Date(y, m - 1, d);
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return days[date.getDay()];
-}
-
 function getDayIndonesian(day) {
     const map = { 'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat' };
     return map[day] || day;
@@ -71,6 +102,8 @@ function escapeHtml(str) {
     div.textContent = str == null ? '' : str;
     return div.innerHTML;
 }
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 // ===== API CALLS =====
 async function apiCall(action, params = {}) {
@@ -83,7 +116,48 @@ async function apiCall(action, params = {}) {
         return await response.json();
     } catch (error) {
         console.error('API Error:', error);
+        if (!navigator.onLine) {
+            queueAction(action, params);
+        }
         throw error;
+    }
+}
+
+// ===== QUEUE SYSTEM (Offline) =====
+function queueAction(action, params) {
+    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
+    pending.push({ action, params, timestamp: Date.now() });
+    localStorage.setItem('pending_actions', JSON.stringify(pending));
+    updatePendingCounter();
+}
+
+async function processPendingActions() {
+    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
+    if (!pending.length || !navigator.onLine) return;
+    const failed = [];
+    for (const item of pending) {
+        try {
+            await apiCall(item.action, item.params);
+        } catch (error) {
+            failed.push(item);
+        }
+    }
+    if (failed.length) {
+        localStorage.setItem('pending_actions', JSON.stringify(failed));
+    } else {
+        localStorage.removeItem('pending_actions');
+    }
+    updatePendingCounter();
+}
+
+function updatePendingCounter() {
+    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
+    const el = document.getElementById('pending-counter');
+    if (pending.length && el) {
+        el.style.display = 'block';
+        el.textContent = `📤 ${pending.length} pending`;
+    } else if (el) {
+        el.style.display = 'none';
     }
 }
 
@@ -91,386 +165,224 @@ async function apiCall(action, params = {}) {
 async function loadClasses() {
     try {
         const data = await apiCall('getClasses');
+        els.classSelector.innerHTML = '<option value="">Pilih Kelas...</option>';
+        if (data.classes && data.classes.length > 0) {
+            data.classes.forEach(cls => {
+                const opt = document.createElement('option');
+                opt.value = cls;
+                opt.textContent = cls;
+                els.classSelector.appendChild(opt);
+            });
+            localStorage.setItem('classes_cache', JSON.stringify(data.classes));
+        }
         return data.classes || [];
     } catch (error) {
-        console.error('Failed to load classes:', error);
+        const cached = localStorage.getItem('classes_cache');
+        if (cached) {
+            const classes = JSON.parse(cached);
+            els.classSelector.innerHTML = '<option value="">Pilih Kelas...</option>';
+            classes.forEach(cls => {
+                const opt = document.createElement('option');
+                opt.value = cls;
+                opt.textContent = cls;
+                els.classSelector.appendChild(opt);
+            });
+            return classes;
+        }
         return [];
     }
 }
 
 // ===== LOAD STUDENTS =====
 async function loadStudents(kelas, date) {
-    if (!kelas) return { students: [], attendance: {}, piket: [] };
+    if (!kelas) {
+        els.studentList.innerHTML = '<p class="empty-state">Pilih kelas untuk mulai</p>';
+        els.piketSection.style.display = 'none';
+        els.whatsappBtn.style.display = 'none';
+        els.statsSummary.style.display = 'none';
+        return;
+    }
+    
     try {
         const [studentData, attData, piketData] = await Promise.all([
             apiCall('getStudents', { kelas }),
             apiCall('getAttendance', { date, kelas }),
             apiCall('getPiket', { date, kelas })
         ]);
-        return {
-            students: studentData.students || [],
-            attendance: attData.attendance || {},
-            piket: piketData.piket || []
-        };
+        
+        state.students = studentData.students || [];
+        state.attendance = attData.attendance || {};
+        state.piket = piketData.piket || [];
+        
+        renderStudents();
+        renderPiket();
+        updateStats();
+        
+        els.piketSection.style.display = 'block';
+        els.whatsappBtn.style.display = 'block';
+        els.statsSummary.style.display = 'grid';
+        cacheData(kelas, date);
+        
     } catch (error) {
-        console.error('Failed to load students:', error);
-        return { students: [], attendance: {}, piket: [] };
+        const cached = getCachedData(kelas, date);
+        if (cached) {
+            state.students = cached.students || [];
+            state.attendance = cached.attendance || {};
+            state.piket = cached.piket || [];
+            renderStudents();
+            renderPiket();
+            updateStats();
+            els.piketSection.style.display = 'block';
+            els.whatsappBtn.style.display = 'block';
+            els.statsSummary.style.display = 'grid';
+        } else {
+            els.studentList.innerHTML = '<p class="empty-state">❌ Gagal memuat data. Periksa koneksi.</p>';
+        }
     }
 }
 
-// ===== RENDER ENGINE =====
-const app = document.getElementById('app');
-
-function render() {
-    if (state.view.screen === 'instance' && state.view.instanceId) {
-        renderInstanceDetail(state.view.instanceId);
-    } else {
-        renderHome();
-    }
+// ===== CACHE =====
+function cacheData(kelas, date) {
+    const cache = {
+        students: state.students,
+        attendance: state.attendance,
+        piket: state.piket,
+        timestamp: Date.now(),
+    };
+    localStorage.setItem(`cache_${kelas}_${date}`, JSON.stringify(cache));
 }
 
-// ===== HOME SCREEN =====
-function renderHome() {
-    const templatesHtml = state.templates.length
-        ? state.templates.map(t => `
-            <div class="card" data-action="open-template" data-id="${t.id}">
-                <div class="card-title-row">
-                    <div>
-                        <div class="card-title">${escapeHtml(t.name)}</div>
-                        <div class="card-sub">${t.students.length} students</div>
-                    </div>
-                    <div class="row">
-                        <button class="icon" data-action="edit-template" data-id="${t.id}">Edit</button>
-                        <button class="icon danger" data-action="delete-template" data-id="${t.id}">Delete</button>
-                    </div>
-                </div>
-            </div>
-        `).join('')
-        : `<div class="empty-state">No rosters yet. Create one to get started.</div>`;
-
-    const instancesHtml = state.instances.length
-        ? state.instances.slice().sort((a, b) => b.date.localeCompare(a.date)).map(inst => {
-            const totalTasks = inst.tasks ? inst.tasks.length : 0;
-            const doneTasks = inst.tasks ? inst.tasks.filter(t => t.done || t.excused).length : 0;
-            const absentCount = inst.attendance ? inst.attendance.filter(a => a.status).length : 0;
-            return `
-                <div class="card" data-action="open-instance" data-id="${inst.id}">
-                    <div class="card-title-row">
-                        <div>
-                            <div class="card-title">${formatDate(inst.date)} <span class="card-sub">(${inst.weekday})</span></div>
-                            <div class="card-sub">${absentCount} absent · ${doneTasks}/${totalTasks} tasks done</div>
-                        </div>
-                        <button class="icon danger" data-action="delete-instance" data-id="${inst.id}">Delete</button>
-                    </div>
-                </div>
-            `;
-        }).join('')
-        : `<div class="empty-state">No days yet. Create one from a roster below.</div>`;
-
-    app.innerHTML = `
-        <header>
-            <h1>🏫 School Manager</h1>
-            <div id="connection-status">${state.isOnline ? '● Online' : '● Offline'}</div>
-        </header>
-
-        <section>
-            <div class="card-title-row" style="margin-bottom:0.75rem;">
-                <h2>📅 Days</h2>
-                <button class="primary" id="newInstanceBtn" ${state.templates.length === 0 ? 'disabled' : ''}>+ New day</button>
-            </div>
-            ${instancesHtml}
-        </section>
-
-        <section>
-            <div class="card-title-row" style="margin-bottom:0.75rem;">
-                <h2>📋 Class rosters</h2>
-                <button id="newTemplateBtn">+ New roster</button>
-            </div>
-            ${templatesHtml}
-            <button id="piketBuilderBtn" class="primary" style="margin-top:8px;width:100%;">🧹 Piket Schedule Builder</button>
-        </section>
-
-        <div id="offline-banner" style="display:${state.isOnline ? 'none' : 'block'};" class="offline-banner">⚠️ Offline - changes will sync when online</div>
-        <div id="pending-counter" class="pending-badge" style="display:none;">📤 0 pending</div>
-    `;
-
-    // Event listeners
-    document.getElementById('newTemplateBtn').onclick = () => openTemplateDialog();
-    document.getElementById('newInstanceBtn').onclick = () => openInstantiateDialog();
-    document.getElementById('piketBuilderBtn').onclick = () => openPiketBuilderDialog();
-
-    app.querySelectorAll('[data-action="open-template"]').forEach(card => {
-        card.onclick = () => { state.view = { screen: 'template', templateId: card.dataset.id }; render(); };
-    });
-    app.querySelectorAll('[data-action="edit-template"]').forEach(btn => {
-        btn.onclick = (e) => { e.stopPropagation(); openTemplateDialog(btn.dataset.id); };
-    });
-    app.querySelectorAll('[data-action="delete-template"]').forEach(btn => {
-        btn.onclick = (e) => { e.stopPropagation(); deleteTemplate(btn.dataset.id); };
-    });
-    app.querySelectorAll('[data-action="open-instance"]').forEach(card => {
-        card.onclick = () => { state.view = { screen: 'instance', instanceId: card.dataset.id, tab: 'attendance' }; render(); };
-    });
-    app.querySelectorAll('[data-action="delete-instance"]').forEach(btn => {
-        btn.onclick = (e) => { e.stopPropagation(); deleteInstance(btn.dataset.id); };
-    });
+function getCachedData(kelas, date) {
+    const data = localStorage.getItem(`cache_${kelas}_${date}`);
+    if (!data) return null;
+    const parsed = JSON.parse(data);
+    if (Date.now() - parsed.timestamp > CONFIG.CACHE_DURATION) return null;
+    return parsed;
 }
 
-// ===== TEMPLATE DIALOG =====
-const templateDialog = document.getElementById('templateDialog');
-const templateForm = document.getElementById('templateForm');
-const templateNameInput = document.getElementById('templateNameInput');
-const rosterNamesInput = document.getElementById('rosterNamesInput');
-const dayInputsContainer = document.getElementById('dayInputsContainer');
-let editingTemplateId = null;
-
-function buildDayInputs(existingDays) {
-    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-    dayInputsContainer.innerHTML = DAYS.map(day => `
-        <div class="day-block">
-            <div class="day-block-title">${day}</div>
-            <textarea data-day="${day}" rows="2" placeholder="One name per line">${(existingDays[day] || []).join('\n')}</textarea>
-        </div>
-    `).join('');
-}
-
-function openTemplateDialog(id) {
-    editingTemplateId = id || null;
-    if (id) {
-        const t = state.templates.find(t => t.id === id);
-        document.getElementById('templateDialogTitle').textContent = 'Edit roster';
-        templateNameInput.value = t.name;
-        rosterNamesInput.value = t.students.join('\n');
-        buildDayInputs(t.days || {});
-    } else {
-        document.getElementById('templateDialogTitle').textContent = 'New roster';
-        templateNameInput.value = '';
-        rosterNamesInput.value = '';
-        buildDayInputs({});
-    }
-    templateDialog.showModal();
-}
-
-document.getElementById('templateCancelBtn').onclick = () => templateDialog.close();
-
-templateForm.addEventListener('submit', () => {
-    const name = templateNameInput.value.trim();
-    const students = rosterNamesInput.value.split('\n').map(s => s.trim()).filter(Boolean);
-    if (!name || !students.length) return;
-
-    const days = {};
-    dayInputsContainer.querySelectorAll('textarea[data-day]').forEach(ta => {
-        const names = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
-        days[ta.dataset.day] = names;
-    });
-
-    if (editingTemplateId) {
-        const t = state.templates.find(t => t.id === editingTemplateId);
-        t.name = name;
-        t.students = students;
-        t.days = days;
-    } else {
-        state.templates.push({ id: uid(), name, students, days });
-    }
-    saveData();
-    templateDialog.close();
-    render();
-});
-
-// ===== INSTANTIATE DIALOG =====
-const instantiateDialog = document.getElementById('instantiateDialog');
-const instantiateForm = document.getElementById('instantiateForm');
-const instanceDateInput = document.getElementById('instanceDateInput');
-const instanceTemplateSelect = document.getElementById('instanceTemplateSelect');
-
-function openInstantiateDialog() {
-    instanceDateInput.value = todayISO();
-    instanceTemplateSelect.innerHTML = state.templates
-        .map(t => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
-        .join('');
-    instantiateDialog.showModal();
-}
-
-document.getElementById('instantiateCancelBtn').onclick = () => instantiateDialog.close();
-
-instantiateForm.addEventListener('submit', async () => {
-    const date = instanceDateInput.value;
-    const templateId = instanceTemplateSelect.value;
-    const template = state.templates.find(t => t.id === templateId);
-    if (!date || !template) return;
-
-    const weekday = weekdayNameFromISO(date);
-    if (!weekday || weekday === 'Sunday') {
-        alert('Selected date is a Sunday — pick Monday–Saturday.');
+// ===== RENDER STUDENTS =====
+function renderStudents() {
+    if (!state.students || !state.students.length) {
+        els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
-
-    const piketNames = template.days[weekday] || [];
-    const attendance = template.students.map(name => ({ id: uid(), name, status: null }));
-    const tasks = piketNames.map(name => ({
-        id: uid(),
-        name: name,
-        done: false,
-        excused: false,
-        photo1: '',
-        photo2: ''
-    }));
-
-    const newInstance = {
-        id: uid(),
-        date,
-        weekday,
-        templateId: template.id,
-        attendance,
-        tasks,
-        proof: { note: '', photos: [] }
-    };
-    state.instances.push(newInstance);
-    saveData();
-    state.view = { screen: 'instance', instanceId: newInstance.id, tab: 'attendance' };
-    instantiateDialog.close();
-    render();
-});
-
-// ===== DELETE FUNCTIONS =====
-function deleteInstance(id) {
-    if (!confirm('Delete this day?')) return;
-    state.instances = state.instances.filter(i => i.id !== id);
-    saveData();
-    render();
-}
-
-function deleteTemplate(id) {
-    if (!confirm('Delete this roster?')) return;
-    state.templates = state.templates.filter(t => t.id !== id);
-    saveData();
-    render();
-}
-
-// ===== INSTANCE DETAIL =====
-function renderInstanceDetail(instanceId) {
-    const inst = state.instances.find(i => i.id === instanceId);
-    if (!inst) { state.view = { screen: 'home' }; return render(); }
-
-    const tab = state.view.tab || 'attendance';
-
-    app.innerHTML = `
-        <span class="back-link" id="backBtn">&larr; Back</span>
-        <header>
-            <h1>${formatDate(inst.date)} <span class="card-sub">(${inst.weekday})</span></h1>
-        </header>
-        <div class="tab-row">
-            <div class="tab-btn ${tab === 'attendance' ? 'active' : ''}" data-tab="attendance">Attendance</div>
-            <div class="tab-btn ${tab === 'piket' ? 'active' : ''}" data-tab="piket">Piket</div>
-            <div class="tab-btn ${tab === 'proof' ? 'active' : ''}" data-tab="proof">Proof</div>
-        </div>
-        <div id="tabContent"></div>
-    `;
-
-    document.getElementById('backBtn').onclick = () => { state.view = { screen: 'home' }; render(); };
-    app.querySelectorAll('.tab-btn').forEach(btn =>
-        btn.onclick = () => { state.view.tab = btn.dataset.tab; render(); }
-    );
-
-    const tabContent = document.getElementById('tabContent');
-    if (tab === 'attendance') renderAttendanceTab(inst, tabContent);
-    else if (tab === 'piket') renderPiketTab(inst, tabContent);
-    else renderProofTab(inst, tabContent);
-}
-
-// ===== ATTENDANCE TAB =====
-function renderAttendanceTab(inst, container) {
-    const sickCount = inst.attendance.filter(a => a.status === 'sick').length;
-    const alphaCount = inst.attendance.filter(a => a.status === 'alpha').length;
-    const permissionCount = inst.attendance.filter(a => a.status === 'permission').length;
-    const totalAbsent = sickCount + alphaCount + permissionCount;
-    const parts = [];
-    if (sickCount) parts.push(`${sickCount} sick`);
-    if (alphaCount) parts.push(`${alphaCount} alpha`);
-    if (permissionCount) parts.push(`${permissionCount} permission`);
-    const summary = totalAbsent ? `${totalAbsent} absent (${parts.join(', ')})` : '0 absent';
-
-    const entriesHtml = inst.attendance.map(e => `
-        <li class="entry-item ${e.status ? 'crossed' : ''}" data-id="${e.id}">
-            <span>${escapeHtml(e.name)}</span>
-            <div class="status-btns">
-                <button class="status-btn sick ${e.status === 'sick' ? 'active' : ''}" data-action="status" data-id="${e.id}" data-status="sick">Sick</button>
-                <button class="status-btn alpha ${e.status === 'alpha' ? 'active' : ''}" data-action="status" data-id="${e.id}" data-status="alpha">Alpha</button>
-                <button class="status-btn permission ${e.status === 'permission' ? 'active' : ''}" data-action="status" data-id="${e.id}" data-status="permission">Permission</button>
+    
+    let html = '';
+    state.students.forEach(student => {
+        const nis = student[0];
+        const name = student[1];
+        const status = state.attendance[nis] || 'hadir';
+        const statusClass = `active-${status}`;
+        
+        html += `
+            <div class="student-card" data-nis="${nis}">
+                <div class="student-info">
+                    <span class="student-name">${escapeHtml(name)}</span>
+                    <span class="student-nis">NIS: ${nis}</span>
+                </div>
+                <div class="status-btns">
+                    ${['hadir', 'absen', 'sakit', 'izin'].map(s => `
+                        <button class="status-btn ${status === s ? statusClass : ''}" 
+                                data-status="${s}" 
+                                onclick="markAttendance('${nis}', '${s}')">
+                            ${s === 'hadir' ? '✅' : s === 'absen' ? '❌' : s === 'sakit' ? '🏠' : '📝'}
+                        </button>
+                    `).join('')}
+                </div>
             </div>
-        </li>
-    `).join('');
-
-    container.innerHTML = `
-        <div class="card-sub" style="margin-bottom:0.75rem;">${summary}</div>
-        <ul style="list-style:none; margin:0; padding:0;">${entriesHtml}</ul>
-    `;
-
-    container.querySelectorAll('[data-action="status"]').forEach(btn => {
-        btn.onclick = () => {
-            const entry = inst.attendance.find(e => e.id === btn.dataset.id);
-            entry.status = entry.status === btn.dataset.status ? null : btn.dataset.status;
-            saveData();
-            render();
-        };
+        `;
     });
+    els.studentList.innerHTML = html;
 }
 
-// ===== PIKET TAB =====
-function renderPiketTab(inst, container) {
-    const totalTasks = inst.tasks.length;
-    const resolvedTasks = inst.tasks.filter(t => t.done || t.excused).length;
-    const pct = totalTasks ? Math.round((resolvedTasks / totalTasks) * 100) : 0;
+// ===== MARK ATTENDANCE =====
+async function markAttendance(nis, status) {
+    const date = els.dateSelector.value;
+    const kelas = els.classSelector.value;
+    
+    state.attendance[nis] = status;
+    renderStudents();
+    updateStats();
+    
+    try {
+        await apiCall('markAttendance', { nis, date, status, kelas });
+        cacheData(kelas, date);
+    } catch (error) {
+        queueAction('markAttendance', { nis, date, status, kelas });
+    }
+}
 
-    const tasksHtml = inst.tasks.map(t => {
-        const done = t.done || false;
-        const excused = t.excused || false;
-        const hasPhoto1 = t.photo1 && t.photo1.length > 0;
-        const hasPhoto2 = t.photo2 && t.photo2.length > 0;
-        return `
-            <div class="task-card ${done ? 'done' : ''} ${excused ? 'excused' : ''}" data-task-id="${t.id}">
-                <div class="task-top-row">
-                    <span class="task-label">${escapeHtml(t.name)}</span>
-                    <div class="row">
-                        <button class="task-done-btn" data-action="toggle-done" data-id="${t.id}" ${excused ? 'disabled' : ''}>${excused ? '—' : (done ? '✓' : '')}</button>
-                        <button class="piket-photo-btn ${hasPhoto1 ? 'has-photo' : ''}" data-action="photo" data-id="${t.id}" data-num="1">📷1</button>
-                        <button class="piket-photo-btn ${hasPhoto2 ? 'has-photo' : ''}" data-action="photo" data-id="${t.id}" data-num="2">📷2</button>
-                    </div>
+// ===== RENDER PIKET =====
+function renderPiket() {
+    if (!state.piket || !state.piket.length) {
+        els.piketList.innerHTML = '<p class="empty-state">Tidak ada piket untuk hari ini</p>';
+        return;
+    }
+    
+    let html = '';
+    state.piket.forEach(piket => {
+        const done = piket.done || false;
+        const hasPhoto1 = piket.photo1 && piket.photo1.length > 0;
+        const hasPhoto2 = piket.photo2 && piket.photo2.length > 0;
+        const names = piket.names ? piket.names.join(', ') : '';
+        
+        html += `
+            <div class="piket-item ${done ? 'done' : ''}" id="piket-${piket.id}">
+                <div class="piket-info">
+                    <span class="piket-name">👥 ${escapeHtml(names)}</span>
+                    <span class="piket-status ${done ? 'done' : 'pending'}">
+                        ${done ? '✅ Selesai' : '⬜ Belum'}
+                    </span>
+                </div>
+                <div class="piket-actions">
+                    <button class="piket-toggle ${done ? 'done' : ''}" onclick="togglePiket('${piket.id}', ${!done})">
+                        ${done ? '↩️ Batal' : '✅ Selesai'}
+                    </button>
+                    <button class="piket-photo-btn ${hasPhoto1 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 1)">
+                        📷1
+                    </button>
+                    <button class="piket-photo-btn ${hasPhoto2 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 2)">
+                        📷2
+                    </button>
                 </div>
                 ${(hasPhoto1 || hasPhoto2) ? `
                     <div class="piket-photos">
-                        ${hasPhoto1 ? `<a href="${t.photo1}" target="_blank">📸 Foto 1</a>` : ''}
-                        ${hasPhoto2 ? `<a href="${t.photo2}" target="_blank">📸 Foto 2</a>` : ''}
+                        ${hasPhoto1 ? `<a href="${piket.photo1}" target="_blank">📸 Foto 1</a>` : ''}
+                        ${hasPhoto2 ? `<a href="${piket.photo2}" target="_blank">📸 Foto 2</a>` : ''}
                     </div>
                 ` : ''}
-                ${excused ? `<div class="excused-tag">Excused — marked absent today</div>` : ''}
             </div>
         `;
-    }).join('');
-
-    container.innerHTML = `
-        <div class="card-sub">${resolvedTasks}/${totalTasks} tasks resolved</div>
-        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-        ${tasksHtml}
-    `;
-
-    container.querySelectorAll('[data-action="toggle-done"]').forEach(btn => {
-        btn.onclick = () => {
-            const task = inst.tasks.find(t => t.id === btn.dataset.id);
-            if (!task || task.excused) return;
-            task.done = !task.done;
-            saveData();
-            render();
-        };
     });
-
-    container.querySelectorAll('[data-action="photo"]').forEach(btn => {
-        btn.onclick = () => uploadTaskPhoto(inst.id, btn.dataset.id, parseInt(btn.dataset.num));
-    });
+    els.piketList.innerHTML = html;
 }
 
-// ===== UPLOAD TASK PHOTO =====
-function uploadTaskPhoto(instanceId, taskId, photoNum) {
+// ===== TOGGLE PIKET =====
+async function togglePiket(id, done) {
+    const date = els.dateSelector.value;
+    const kelas = els.classSelector.value;
+    
+    const piket = state.piket.find(p => p.id === id);
+    if (piket) {
+        piket.done = done;
+        renderPiket();
+    }
+    
+    try {
+        await apiCall('togglePiket', { id, done, date, kelas });
+        cacheData(kelas, date);
+        await loadStudents(kelas, date);
+    } catch (error) {
+        if (piket) {
+            piket.done = !done;
+            renderPiket();
+        }
+        queueAction('togglePiket', { id, done, date, kelas });
+    }
+}
+
+// ===== UPLOAD PIKET PHOTO =====
+async function uploadPiketPhoto(id, photoNum) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -480,263 +392,425 @@ function uploadTaskPhoto(instanceId, taskId, photoNum) {
         const reader = new FileReader();
         reader.onload = async (event) => {
             const base64 = event.target.result;
-            const inst = state.instances.find(i => i.id === instanceId);
-            const task = inst.tasks.find(t => t.id === taskId);
-            if (photoNum === 1) task.photo1 = base64;
-            else task.photo2 = base64;
-            saveData();
-            render();
+            const piketEl = document.getElementById(`piket-${id}`);
+            if (piketEl) piketEl.style.opacity = '0.5';
+            try {
+                const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 });
+                if (result.success) {
+                    await loadStudents(els.classSelector.value, els.dateSelector.value);
+                } else {
+                    alert('❌ Gagal upload foto: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('❌ Gagal upload foto. Periksa koneksi.');
+            } finally {
+                if (piketEl) piketEl.style.opacity = '1';
+            }
         };
         reader.readAsDataURL(file);
     };
     input.click();
 }
 
-// ===== PROOF TAB =====
-function renderProofTab(inst, container) {
-    const hasProof = inst.proof && (inst.proof.note || (inst.proof.photos && inst.proof.photos.length));
-    const proofPhotosHtml = (inst.proof.photos || []).map(p => `<img src="${p}" alt="proof photo" />`).join('');
-
-    container.innerHTML = `
-        <div class="proof-section">
-            <div class="card-title-row" style="margin-bottom:0.5rem;">
-                <h3 style="margin:0;">Proof of work</h3>
-                <button class="icon" id="editProofBtn">${hasProof ? 'Edit' : 'Add'}</button>
-            </div>
-            ${hasProof ? `
-                ${inst.proof.note ? `<div class="proof-note">${escapeHtml(inst.proof.note)}</div>` : ''}
-                ${inst.proof.photos && inst.proof.photos.length ? `<div class="proof-photos">${proofPhotosHtml}</div>` : ''}
-            ` : `<div class="card-sub">No proof attached yet.</div>`}
-        </div>
-    `;
-    document.getElementById('editProofBtn').onclick = () => openProofDialog(inst.id);
-}
-
-// ===== PROOF DIALOG =====
-const proofDialog = document.getElementById('proofDialog');
-const proofForm = document.getElementById('proofForm');
-const proofNoteInput = document.getElementById('proofNoteInput');
-const proofPhotoInput = document.getElementById('proofPhotoInput');
-const proofPhotoPreview = document.getElementById('proofPhotoPreview');
-let editingProofInstanceId = null;
-let pendingPhotos = [];
-
-function openProofDialog(instanceId) {
-    editingProofInstanceId = instanceId;
-    const inst = state.instances.find(i => i.id === instanceId);
-    proofNoteInput.value = inst.proof.note || '';
-    pendingPhotos = (inst.proof.photos || []).slice();
-    renderProofPreview();
-    proofPhotoInput.value = '';
-    proofDialog.showModal();
-}
-
-function renderProofPreview() {
-    proofPhotoPreview.innerHTML = pendingPhotos.map((src, idx) => `
-        <div class="photo-thumb-wrap">
-            <img src="${src}" alt="photo" />
-            <button type="button" class="photo-remove-btn" data-idx="${idx}">&times;</button>
-        </div>
-    `).join('');
-    proofPhotoPreview.querySelectorAll('.photo-remove-btn').forEach(btn =>
-        btn.onclick = () => {
-            pendingPhotos.splice(Number(btn.dataset.idx), 1);
-            renderProofPreview();
-        }
-    );
-}
-
-proofPhotoInput.addEventListener('change', async () => {
-    const files = Array.from(proofPhotoInput.files || []);
-    for (const file of files) {
-        const dataUrl = await fileToResizedDataUrl(file);
-        pendingPhotos.push(dataUrl);
+// ===== UPDATE STATS =====
+function updateStats() {
+    const stats = { hadir: 0, absen: 0, sakit: 0, izin: 0 };
+    if (state.students) {
+        state.students.forEach(student => {
+            const nis = student[0];
+            const status = state.attendance[nis] || 'hadir';
+            stats[status] = (stats[status] || 0) + 1;
+        });
     }
-    proofPhotoInput.value = '';
-    renderProofPreview();
-});
+    
+    els.statHadir.textContent = stats.hadir;
+    els.statAbsen.textContent = stats.absen;
+    els.statSakit.textContent = stats.sakit;
+    els.statIzin.textContent = stats.izin;
+}
 
-function fileToResizedDataUrl(file, maxDim = 1000, quality = 0.75) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = reject;
-        reader.onload = () => {
-            const img = new Image();
-            img.onerror = reject;
-            img.onload = () => {
-                let { width, height } = img;
-                if (width > maxDim || height > maxDim) {
-                    const scale = maxDim / Math.max(width, height);
-                    width = Math.round(width * scale);
-                    height = Math.round(height * scale);
-                }
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-                resolve(canvas.toDataURL('image/jpeg', quality));
-            };
-            img.src = reader.result;
-        };
-        reader.readAsDataURL(file);
+// ===== WHATSAPP REPORT =====
+function copyWhatsAppReport() {
+    const kelas = els.classSelector.value;
+    const date = els.dateSelector.value;
+    const formattedDate = new Date(date + 'T00:00:00').toLocaleDateString('id-ID', {
+        day: 'numeric', month: 'long', year: 'numeric'
+    });
+    
+    let report = `📊 *REKAP ABSENSI ${kelas}*\n`;
+    report += `📅 ${formattedDate}\n`;
+    report += `━━━━━━━━━━━━━━━━\n`;
+    report += `✅ Hadir: ${els.statHadir.textContent}\n`;
+    report += `❌ Absen: ${els.statAbsen.textContent}\n`;
+    report += `🏠 Sakit: ${els.statSakit.textContent}\n`;
+    report += `📝 Izin: ${els.statIzin.textContent}\n`;
+    report += `━━━━━━━━━━━━━━━━\n`;
+    
+    if (state.students) {
+        const absentStudents = state.students
+            .filter(s => state.attendance[s[0]] === 'absen')
+            .map(s => s[1]);
+        if (absentStudents.length) {
+            report += `❌ Absen: ${absentStudents.join(', ')}\n`;
+        }
+    }
+    
+    if (state.piket && state.piket.length) {
+        report += `\n🧹 *PIKET*:\n`;
+        state.piket.forEach(p => {
+            const status = p.done ? '✅ Selesai' : '⬜ Belum';
+            const names = p.names ? p.names.join(', ') : '';
+            report += `${names}: ${status}\n`;
+        });
+    }
+    
+    navigator.clipboard.writeText(report).then(() => {
+        alert('✅ Laporan disalin! Tempelkan ke WhatsApp.');
+    }).catch(() => {
+        prompt('Salin teks ini:', report);
     });
 }
 
-document.getElementById('proofCancelBtn').onclick = () => proofDialog.close();
+// ===== HISTORY =====
+async function loadHistory() {
+    const date = els.historyDate.value;
+    if (!date) {
+        alert('Pilih tanggal terlebih dahulu');
+        return;
+    }
+    
+    try {
+        const data = await apiCall('getHistory', { date });
+        let html = `<h3>📅 Rekap ${formatDate(date)}</h3>`;
+        
+        if (data.attendance && data.attendance.length) {
+            html += `<div class="student-grid">`;
+            data.attendance.forEach(record => {
+                html += `
+                    <div class="student-card">
+                        <span class="student-name">${escapeHtml(record.name)}</span>
+                        <span>${record.status}</span>
+                    </div>
+                `;
+            });
+            html += `</div>`;
+        } else {
+            html += `<p class="empty-state">Tidak ada data untuk tanggal ini</p>`;
+        }
+        
+        if (data.piket && data.piket.length) {
+            html += `<h4>🧹 Piket</h4>`;
+            data.piket.forEach(p => {
+                const names = p.names ? p.names.join(', ') : '';
+                html += `<div class="piket-item">
+                    <span>${escapeHtml(names)}: ${p.done ? '✅ Selesai' : '⬜ Belum'}</span>
+                </div>`;
+            });
+        }
+        
+        els.historyContainer.innerHTML = html;
+    } catch (error) {
+        els.historyContainer.innerHTML = '<p class="empty-state">❌ Gagal memuat history</p>';
+    }
+}
 
-proofForm.addEventListener('submit', () => {
-    const inst = state.instances.find(i => i.id === editingProofInstanceId);
-    inst.proof = { note: proofNoteInput.value.trim(), photos: pendingPhotos.slice() };
-    saveData();
-    proofDialog.close();
-    render();
-});
+// ===== CSV UPLOAD =====
+async function uploadCSV() {
+    const file = els.csvUpload.files[0];
+    if (!file) {
+        els.uploadStatus.textContent = '⚠️ Pilih file CSV terlebih dahulu';
+        els.uploadStatus.className = 'status-msg error';
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const csv = e.target.result;
+        try {
+            els.uploadStatus.textContent = '📤 Mengupload...';
+            els.uploadStatus.className = 'status-msg';
+            
+            const result = await apiCall('uploadCSV', { csv: encodeURIComponent(csv) });
+            
+            if (result.success) {
+                els.uploadStatus.textContent = `✅ ${result.message}`;
+                els.uploadStatus.className = 'status-msg success';
+                await loadClasses();
+                await loadStudents(els.classSelector.value, els.dateSelector.value);
+            } else {
+                els.uploadStatus.textContent = `❌ ${result.message}`;
+                els.uploadStatus.className = 'status-msg error';
+            }
+        } catch (error) {
+            els.uploadStatus.textContent = '❌ Gagal upload. Periksa koneksi.';
+            els.uploadStatus.className = 'status-msg error';
+        }
+    };
+    reader.readAsText(file);
+}
 
-// ===== PIKET BUILDER DIALOG =====
-const piketBuilderDialog = document.getElementById('piketBuilderDialog');
-const piketBuilderForm = document.getElementById('piketBuilderForm');
-let piketBuilderState = { kelas: '', day: 'Monday', allStudents: [], selectedStudents: [] };
+// ========================================
+// PIKET SCHEDULE BUILDER (Full Week)
+// ========================================
 
 async function openPiketBuilderDialog() {
+    const dialog = document.getElementById('piketBuilderDialog');
     const classes = await loadClasses();
     const selector = document.getElementById('piket-class-selector');
-    selector.innerHTML = '<option value="">-- Select --</option>';
+    selector.innerHTML = '<option value="">-- Select Class --</option>';
     classes.forEach(cls => {
         const opt = document.createElement('option');
         opt.value = cls;
         opt.textContent = cls;
         selector.appendChild(opt);
     });
-    piketBuilderState.selectedStudents = [];
-    document.getElementById('piket-day-label').textContent = 'Senin';
-    document.getElementById('piket-json-output').style.display = 'none';
-    document.getElementById('piket-save-btn').style.display = 'none';
+    
+    // Reset state
+    piketState.kelas = '';
+    piketState.allStudents = [];
+    piketState.monday = [];
+    piketState.tuesday = [];
+    piketState.wednesday = [];
+    piketState.thursday = [];
+    piketState.friday = [];
+    piketState.filteredStudents = [];
+    
+    document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">Pilih kelas terlebih dahulu</p>';
+    updatePiketSelectedDisplay();
     document.getElementById('piket-status').textContent = '';
     document.getElementById('piket-status').className = '';
-    document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">Pilih kelas terlebih dahulu</p>';
-    document.getElementById('piket-selected-students').innerHTML = '<p class="empty-state">Belum ada siswa terpilih</p>';
-    piketBuilderDialog.showModal();
+    document.getElementById('piket-save-btn').style.display = 'none';
+    
+    // Clear day lists
+    document.getElementById('piket-mon-list').innerHTML = '';
+    document.getElementById('piket-tue-list').innerHTML = '';
+    document.getElementById('piket-wed-list').innerHTML = '';
+    document.getElementById('piket-thu-list').innerHTML = '';
+    document.getElementById('piket-fri-list').innerHTML = '';
+    
+    dialog.showModal();
 }
 
-document.getElementById('piket-close-btn').onclick = () => piketBuilderDialog.close();
+function updatePiketSelectedDisplay() {
+    const days = [
+        { id: 'piket-mon-list', data: piketState.monday, label: 'Senin' },
+        { id: 'piket-tue-list', data: piketState.tuesday, label: 'Selasa' },
+        { id: 'piket-wed-list', data: piketState.wednesday, label: 'Rabu' },
+        { id: 'piket-thu-list', data: piketState.thursday, label: 'Kamis' },
+        { id: 'piket-fri-list', data: piketState.friday, label: 'Jumat' },
+    ];
+    
+    days.forEach(day => {
+        const container = document.getElementById(day.id);
+        if (!container) return;
+        if (!day.data.length) {
+            container.innerHTML = `<span class="empty-state" style="padding:4px;font-size:12px;">Belum ada siswa</span>`;
+            return;
+        }
+        container.innerHTML = day.data.map(s => `
+            <span class="selected-student-tag" data-day="${day.label}" data-nis="${s[0]}">${escapeHtml(s[1])}</span>
+        `).join('');
+        container.querySelectorAll('.selected-student-tag').forEach(el => {
+            el.onclick = () => {
+                const nis = el.dataset.nis;
+                const dayLabel = el.dataset.day;
+                const dayMap = { 'Senin': 'monday', 'Selasa': 'tuesday', 'Rabu': 'wednesday', 'Kamis': 'thursday', 'Jumat': 'friday' };
+                const key = dayMap[dayLabel];
+                if (key) {
+                    piketState[key] = piketState[key].filter(s => s[0].toString() !== nis);
+                    updatePiketSelectedDisplay();
+                    renderPiketBuilderStudents();
+                }
+            };
+        });
+    });
+}
 
 document.getElementById('piket-class-selector').addEventListener('change', async () => {
     const kelas = document.getElementById('piket-class-selector').value;
-    piketBuilderState.kelas = kelas;
+    piketState.kelas = kelas;
     if (!kelas) {
         document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">Pilih kelas terlebih dahulu</p>';
         return;
     }
     try {
         const data = await apiCall('getStudents', { kelas });
-        piketBuilderState.allStudents = data.students || [];
-        piketBuilderState.selectedStudents = [];
+        piketState.allStudents = data.students || [];
+        piketState.monday = [];
+        piketState.tuesday = [];
+        piketState.wednesday = [];
+        piketState.thursday = [];
+        piketState.friday = [];
+        piketState.filteredStudents = piketState.allStudents;
         renderPiketBuilderStudents();
-        renderPiketBuilderSelected();
+        updatePiketSelectedDisplay();
+        document.getElementById('piket-status').textContent = '';
+        document.getElementById('piket-status').className = '';
+        document.getElementById('piket-save-btn').style.display = 'none';
     } catch (error) {
         document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">❌ Gagal memuat siswa</p>';
     }
-});
-
-document.getElementById('piket-day-selector').addEventListener('change', () => {
-    piketBuilderState.day = document.getElementById('piket-day-selector').value;
-    document.getElementById('piket-day-label').textContent = getDayIndonesian(piketBuilderState.day);
-    document.getElementById('piket-json-output').style.display = 'none';
-    document.getElementById('piket-save-btn').style.display = 'none';
 });
 
 document.getElementById('piket-student-search').addEventListener('input', renderPiketBuilderStudents);
 
 function renderPiketBuilderStudents() {
     const search = document.getElementById('piket-student-search').value.toLowerCase().trim();
-    let filtered = piketBuilderState.allStudents;
+    let filtered = piketState.allStudents;
     if (search) {
         filtered = filtered.filter(s => s[1].toLowerCase().includes(search) || s[0].toString().includes(search));
     }
-    const selectedNIS = new Set(piketBuilderState.selectedStudents.map(s => s[0].toString()));
+    piketState.filteredStudents = filtered;
+    
     const list = document.getElementById('piket-student-list');
     if (!filtered.length) {
         list.innerHTML = '<p class="empty-state">Tidak ada siswa yang cocok</p>';
         return;
     }
+    
+    const selectedNIS = new Set([
+        ...piketState.monday.map(s => s[0].toString()),
+        ...piketState.tuesday.map(s => s[0].toString()),
+        ...piketState.wednesday.map(s => s[0].toString()),
+        ...piketState.thursday.map(s => s[0].toString()),
+        ...piketState.friday.map(s => s[0].toString()),
+    ]);
+    
     list.innerHTML = filtered.map(s => `
         <div class="student-search-item ${selectedNIS.has(s[0].toString()) ? 'selected' : ''}" data-nis="${s[0]}">
             <span class="student-name">${escapeHtml(s[1])}</span>
             <span class="student-nis">${s[0]}</span>
+            ${selectedNIS.has(s[0].toString()) ? ' ✅' : ''}
         </div>
     `).join('');
+    
     list.querySelectorAll('.student-search-item').forEach(el => {
-        el.onclick = () => togglePiketBuilderStudent(el.dataset.nis);
+        el.onclick = () => {
+            const nis = el.dataset.nis;
+            const student = piketState.allStudents.find(s => s[0].toString() === nis);
+            if (!student) return;
+            
+            // Check if already assigned to a day
+            const assignedDay = findAssignedDay(nis);
+            if (assignedDay) {
+                // Remove from current day
+                removeFromDay(nis, assignedDay);
+            } else {
+                // Add to Monday by default (first available)
+                piketState.monday.push(student);
+            }
+            renderPiketBuilderStudents();
+            updatePiketSelectedDisplay();
+            document.getElementById('piket-save-btn').style.display = 'none';
+        };
     });
 }
 
-function togglePiketBuilderStudent(nis) {
-    const student = piketBuilderState.allStudents.find(s => s[0].toString() === nis);
+function findAssignedDay(nis) {
+    if (piketState.monday.some(s => s[0].toString() === nis)) return 'monday';
+    if (piketState.tuesday.some(s => s[0].toString() === nis)) return 'tuesday';
+    if (piketState.wednesday.some(s => s[0].toString() === nis)) return 'wednesday';
+    if (piketState.thursday.some(s => s[0].toString() === nis)) return 'thursday';
+    if (piketState.friday.some(s => s[0].toString() === nis)) return 'friday';
+    return null;
+}
+
+function removeFromDay(nis, day) {
+    piketState[day] = piketState[day].filter(s => s[0].toString() !== nis);
+}
+
+// Day button handlers
+document.querySelectorAll('.piket-day-btn').forEach(btn => {
+    btn.onclick = () => {
+        const day = btn.dataset.day;
+        const targetDay = btn.dataset.target;
+        const nis = btn.dataset.nis;
+        const student = piketState.allStudents.find(s => s[0].toString() === nis);
+        if (!student) return;
+        
+        // Remove from all days first
+        ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach(d => {
+            piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
+        });
+        
+        // Add to selected day
+        const dayMap = { 'Senin': 'monday', 'Selasa': 'tuesday', 'Rabu': 'wednesday', 'Kamis': 'thursday', 'Jumat': 'friday' };
+        const key = dayMap[day];
+        if (key) {
+            piketState[key].push(student);
+        }
+        
+        renderPiketBuilderStudents();
+        updatePiketSelectedDisplay();
+        document.getElementById('piket-save-btn').style.display = 'none';
+    };
+});
+
+// Move student to a specific day via right-click context (simplified - click to cycle)
+function cycleStudentDay(nis) {
+    const student = piketState.allStudents.find(s => s[0].toString() === nis);
     if (!student) return;
-    const index = piketBuilderState.selectedStudents.findIndex(s => s[0].toString() === nis);
-    if (index >= 0) piketBuilderState.selectedStudents.splice(index, 1);
-    else piketBuilderState.selectedStudents.push(student);
+    
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    const currentDay = findAssignedDay(nis);
+    let nextIndex = 0;
+    if (currentDay) {
+        const idx = days.indexOf(currentDay);
+        nextIndex = (idx + 1) % days.length;
+    }
+    // Remove from all days
+    days.forEach(d => {
+        piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
+    });
+    // Add to next day
+    piketState[days[nextIndex]].push(student);
+    
     renderPiketBuilderStudents();
-    renderPiketBuilderSelected();
-    document.getElementById('piket-json-output').style.display = 'none';
+    updatePiketSelectedDisplay();
     document.getElementById('piket-save-btn').style.display = 'none';
 }
 
-function renderPiketBuilderSelected() {
-    const container = document.getElementById('piket-selected-students');
-    if (!piketBuilderState.selectedStudents.length) {
-        container.innerHTML = '<p class="empty-state">Belum ada siswa terpilih</p>';
-        return;
-    }
-    container.innerHTML = piketBuilderState.selectedStudents.map(s => `
-        <span class="selected-student-tag" data-nis="${s[0]}">${escapeHtml(s[1])}</span>
-    `).join('');
-    container.querySelectorAll('.selected-student-tag').forEach(el => {
-        el.onclick = () => togglePiketBuilderStudent(el.dataset.nis);
-    });
-}
-
+// Generate full week JSON
 document.getElementById('piket-generate-btn').onclick = () => {
     const kelas = document.getElementById('piket-class-selector').value;
-    const day = document.getElementById('piket-day-selector').value;
-    if (!kelas || !piketBuilderState.selectedStudents.length) {
-        const status = document.getElementById('piket-status');
-        status.textContent = '⚠️ Pilih kelas dan minimal 1 siswa';
-        status.className = 'status-msg error';
+    if (!kelas) {
+        document.getElementById('piket-status').textContent = '⚠️ Pilih kelas terlebih dahulu';
+        document.getElementById('piket-status').className = 'status-msg error';
         return;
     }
-    const nisList = piketBuilderState.selectedStudents.map(s => s[0]).join(',');
-    const schedule = { Monday: '', Tuesday: '', Wednesday: '', Thursday: '', Friday: '' };
-    schedule[day] = nisList;
+    
+    const schedule = {
+        Monday: piketState.monday.map(s => s[0]).join(','),
+        Tuesday: piketState.tuesday.map(s => s[0]).join(','),
+        Wednesday: piketState.wednesday.map(s => s[0]).join(','),
+        Thursday: piketState.thursday.map(s => s[0]).join(','),
+        Friday: piketState.friday.map(s => s[0]).join(','),
+    };
+    
     const json = JSON.stringify(schedule, null, 2);
     document.getElementById('piket-json-preview').textContent = json;
     document.getElementById('piket-json-output').style.display = 'block';
     document.getElementById('piket-save-btn').style.display = 'inline-block';
-    document.getElementById('piket-status').textContent = '✅ JSON generated';
+    document.getElementById('piket-status').textContent = '✅ Full week JSON generated';
     document.getElementById('piket-status').className = 'status-msg success';
-    piketBuilderState.currentSchedule = { key: `piket_schedule_${kelas.replace(' ', '_')}`, schedule, day, nisList };
+    piketState.currentSchedule = { key: `piket_schedule_${kelas.replace(' ', '_')}`, schedule };
 };
 
 document.getElementById('piket-save-btn').onclick = async () => {
-    if (!piketBuilderState.currentSchedule) {
+    if (!piketState.currentSchedule) {
         document.getElementById('piket-status').textContent = '⚠️ Generate JSON first';
         document.getElementById('piket-status').className = 'status-msg error';
         return;
     }
-    const { key, day, nisList } = piketBuilderState.currentSchedule;
+    const { key, schedule } = piketState.currentSchedule;
     try {
-        const existing = await apiCall('getConfig', { key });
-        let existingSchedule = {};
-        if (existing && existing.value) {
-            try { existingSchedule = JSON.parse(existing.value); } catch (e) {}
-        }
-        existingSchedule[day] = nisList;
-        const result = await apiCall('saveConfig', { key, value: JSON.stringify(existingSchedule) });
+        const result = await apiCall('saveConfig', { key, value: JSON.stringify(schedule) });
         if (result.success) {
-            document.getElementById('piket-status').textContent = '✅ Schedule saved!';
+            document.getElementById('piket-status').textContent = '✅ Full week schedule saved!';
             document.getElementById('piket-status').className = 'status-msg success';
             document.getElementById('piket-save-btn').style.display = 'none';
-            document.getElementById('piket-json-preview').textContent = JSON.stringify(existingSchedule, null, 2);
+            // Refresh the main view
+            await loadStudents(els.classSelector.value, els.dateSelector.value);
         } else {
             document.getElementById('piket-status').textContent = '❌ Failed to save';
             document.getElementById('piket-status').className = 'status-msg error';
@@ -748,25 +822,130 @@ document.getElementById('piket-save-btn').onclick = async () => {
 };
 
 document.getElementById('piket-clear-btn').onclick = () => {
-    piketBuilderState.selectedStudents = [];
-    piketBuilderState.currentSchedule = null;
-    renderPiketBuilderStudents();
-    renderPiketBuilderSelected();
+    piketState.monday = [];
+    piketState.tuesday = [];
+    piketState.wednesday = [];
+    piketState.thursday = [];
+    piketState.friday = [];
+    piketState.currentSchedule = null;
     document.getElementById('piket-json-output').style.display = 'none';
     document.getElementById('piket-save-btn').style.display = 'none';
     document.getElementById('piket-status').textContent = '';
     document.getElementById('piket-status').className = '';
+    renderPiketBuilderStudents();
+    updatePiketSelectedDisplay();
 };
 
-// ===== INIT =====
-const saved = loadData();
-state.templates = saved.templates || [];
-state.instances = saved.instances || [];
-render();
+document.getElementById('piket-close-btn').onclick = () => {
+    document.getElementById('piketBuilderDialog').close();
+};
 
-// ===== SERVICE WORKER =====
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').catch(() => {});
+// ===== EVENT LISTENERS =====
+function setupEventListeners() {
+    els.classSelector.addEventListener('change', async () => {
+        state.currentClass = els.classSelector.value;
+        await loadStudents(state.currentClass, els.dateSelector.value);
+    });
+    
+    els.dateSelector.addEventListener('change', async () => {
+        state.currentDate = els.dateSelector.value;
+        await loadStudents(els.classSelector.value, state.currentDate);
+    });
+    
+    els.refreshBtn.addEventListener('click', async () => {
+        await loadStudents(els.classSelector.value, els.dateSelector.value);
+    });
+    
+    els.whatsappBtn.addEventListener('click', copyWhatsAppReport);
+    els.historyLoadBtn.addEventListener('click', loadHistory);
+    els.uploadCsvBtn.addEventListener('click', uploadCSV);
+    els.clearCacheBtn.addEventListener('click', () => {
+        if (confirm('Hapus semua data cache lokal?')) {
+            localStorage.clear();
+            alert('Cache dibersihkan!');
+            location.reload();
+        }
+    });
+    
+    // Admin tab - load piket builder
+    document.querySelector('[data-tab="admin"]').addEventListener('click', () => {
+        // Pre-fill class selector if classes are loaded
+        setTimeout(() => {
+            const piketSelector = document.getElementById('piket-class-selector');
+            if (piketSelector && piketSelector.options.length <= 1) {
+                loadClasses().then(classes => {
+                    if (classes.length) {
+                        piketSelector.innerHTML = '<option value="">-- Select Class --</option>';
+                        classes.forEach(cls => {
+                            const opt = document.createElement('option');
+                            opt.value = cls;
+                            opt.textContent = cls;
+                            piketSelector.appendChild(opt);
+                        });
+                    }
+                });
+            }
+        }, 100);
     });
 }
+
+// ===== ONLINE/OFFLINE =====
+function updateOnlineStatus() {
+    state.isOnline = navigator.onLine;
+    if (els.connectionStatus) {
+        els.connectionStatus.textContent = state.isOnline ? '● Online' : '● Offline';
+        els.connectionStatus.className = state.isOnline ? 'status-online' : 'status-offline';
+    }
+    if (els.offlineBanner) {
+        els.offlineBanner.style.display = state.isOnline ? 'none' : 'block';
+    }
+    if (state.isOnline) {
+        processPendingActions();
+    }
+}
+
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
+// ===== SERVICE WORKER =====
+function registerSW() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js')
+            .then(() => console.log('SW Registered'))
+            .catch(() => console.log('SW Register failed'));
+    }
+}
+
+// ===== INITIALIZATION =====
+document.addEventListener('DOMContentLoaded', async () => {
+    els.dateSelector.value = state.currentDate;
+    els.historyDate.value = state.currentDate;
+    
+    await loadClasses();
+    setupEventListeners();
+    registerSW();
+    updateOnlineStatus();
+    processPendingActions();
+    
+    // Auto-load first class if available
+    setTimeout(async () => {
+        if (els.classSelector.options.length > 1) {
+            els.classSelector.value = els.classSelector.options[1].value;
+            await loadStudents(els.classSelector.value, els.dateSelector.value);
+        }
+    }, 300);
+});
+
+// ===== PERIODIC SYNC =====
+setInterval(() => {
+    if (navigator.onLine && els.classSelector.value) {
+        loadStudents(els.classSelector.value, els.dateSelector.value);
+        processPendingActions();
+    }
+}, 300000);
+
+// Make functions global for onclick
+window.markAttendance = markAttendance;
+window.togglePiket = togglePiket;
+window.uploadPiketPhoto = uploadPiketPhoto;
+window.openPiketBuilderDialog = openPiketBuilderDialog;

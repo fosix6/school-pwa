@@ -11,117 +11,158 @@
 </head>
 <body>
 
-<div id="app"></div>
+<div id="app">
+    <!-- App Header -->
+    <header class="app-header">
+        <h1>🏫 School Manager</h1>
+        <div id="connection-status" class="status-online">● Online</div>
+    </header>
 
-<!-- Template Dialog -->
-<dialog id="templateDialog">
-    <form method="dialog" id="templateForm">
-        <h2 id="templateDialogTitle">New class roster</h2>
-        <label>
-            Roster name
-            <input type="text" id="templateNameInput" required placeholder="e.g. 10 RPL" />
-        </label>
-        <h3>Students (attendance list)</h3>
-        <label>
-            One name per line
-            <textarea id="rosterNamesInput" rows="6" placeholder="Reyhan Ananda Putra&#10;Muhammad Rashya Alfarizqy"></textarea>
-        </label>
-        <h3>Piket (cleaning duty) — names per weekday</h3>
-        <div id="dayInputsContainer"></div>
-        <div class="dialog-actions">
-            <button type="button" id="templateCancelBtn">Cancel</button>
-            <button type="submit" id="templateSaveBtn">Save roster</button>
-        </div>
-    </form>
-</dialog>
+    <!-- Main Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="today">📋 Hari Ini</button>
+        <button class="tab-btn" data-tab="history">📅 History</button>
+        <button class="tab-btn" data-tab="admin">⚙️ Admin</button>
+    </nav>
 
-<!-- Instantiate Day Dialog -->
-<dialog id="instantiateDialog">
-    <form method="dialog" id="instantiateForm">
-        <h2>New day</h2>
-        <label>
-            Date
-            <input type="date" id="instanceDateInput" required />
-        </label>
-        <label>
-            From roster
-            <select id="instanceTemplateSelect"></select>
-        </label>
-        <div class="dialog-actions">
-            <button type="button" id="instantiateCancelBtn">Cancel</button>
-            <button type="submit">Create day</button>
+    <!-- TAB 1: Today -->
+    <main id="tab-today" class="tab-content active">
+        <div class="filter-bar">
+            <select id="class-selector">
+                <option value="">Pilih Kelas...</option>
+            </select>
+            <input type="date" id="date-selector">
+            <button id="refresh-btn" class="icon-btn">🔄</button>
         </div>
-    </form>
-</dialog>
 
-<!-- Proof Dialog -->
-<dialog id="proofDialog">
-    <form method="dialog" id="proofForm">
-        <h2>Proof of work</h2>
-        <label>
-            Notes
-            <textarea id="proofNoteInput" rows="4" placeholder="What was done today..."></textarea>
-        </label>
-        <label>
-            Photos
-            <input type="file" id="proofPhotoInput" accept="image/*" multiple />
-        </label>
-        <div id="proofPhotoPreview" class="photo-preview"></div>
-        <div class="dialog-actions">
-            <button type="button" id="proofCancelBtn">Cancel</button>
-            <button type="submit">Save</button>
+        <div id="stats-summary" class="stats-grid" style="display:none;">
+            <div class="stat-card"><span>✅ Hadir</span><strong id="stat-hadir">0</strong></div>
+            <div class="stat-card"><span>❌ Absen</span><strong id="stat-absen">0</strong></div>
+            <div class="stat-card"><span>🏠 Sakit</span><strong id="stat-sakit">0</strong></div>
+            <div class="stat-card"><span>📝 Izin</span><strong id="stat-izin">0</strong></div>
         </div>
-    </form>
-</dialog>
+
+        <div id="student-list" class="student-grid">
+            <p class="empty-state">Pilih kelas untuk mulai</p>
+        </div>
+
+        <div id="piket-section" style="display:none;">
+            <h3>🧹 Piket Hari Ini</h3>
+            <div id="piket-list" class="piket-grid"></div>
+        </div>
+
+        <button id="whatsapp-btn" class="share-btn" style="display:none;">📱 Copy WhatsApp Report</button>
+    </main>
+
+    <!-- TAB 2: History -->
+    <main id="tab-history" class="tab-content">
+        <div class="filter-bar">
+            <input type="date" id="history-date">
+            <button id="history-load-btn">📊 Load</button>
+        </div>
+        <div id="history-container">
+            <p class="empty-state">Pilih tanggal untuk melihat rekap</p>
+        </div>
+    </main>
+
+    <!-- TAB 3: Admin -->
+    <main id="tab-admin" class="tab-content">
+        <h3>🧹 Piket Schedule Builder</h3>
+        <p>Buat jadwal piket untuk seluruh minggu untuk satu kelas.</p>
+        <button class="primary-btn" onclick="openPiketBuilderDialog()">📋 Buka Piket Builder</button>
+        
+        <hr>
+        
+        <h3>📥 Import CSV</h3>
+        <p>Upload file CSV dengan kolom: NIS, Nama, Kelas, Jurusan</p>
+        <input type="file" id="csv-upload" accept=".csv">
+        <button id="upload-csv-btn" class="primary-btn">Upload ke Google Sheets</button>
+        <div id="upload-status" class="status-msg"></div>
+        
+        <hr>
+        
+        <h3>📊 Database Stats</h3>
+        <div id="db-stats">
+            <p>Total Siswa: <span id="total-students">-</span></p>
+            <p>Total Absensi: <span id="total-attendance">-</span></p>
+        </div>
+        <button id="clear-cache-btn" class="danger-btn">🗑️ Clear Local Cache</button>
+    </main>
+
+    <!-- Offline Banner -->
+    <div id="offline-banner" class="offline-banner" style="display:none;">
+        ⚠️ Offline - Perubahan akan disimpan saat koneksi kembali
+    </div>
+
+    <!-- Pending Updates Counter -->
+    <div id="pending-counter" class="pending-badge" style="display:none;">📤 0 pending</div>
+</div>
 
 <!-- Piket Schedule Builder Dialog -->
 <dialog id="piketBuilderDialog">
     <form method="dialog" id="piketBuilderForm">
         <h2>🧹 Piket Schedule Builder</h2>
+        <p>Buat jadwal piket untuk seluruh minggu untuk satu kelas.</p>
+        
         <label>
             Class
             <select id="piket-class-selector">
-                <option value="">-- Select --</option>
+                <option value="">-- Select Class --</option>
             </select>
         </label>
-        <label>
-            Day
-            <select id="piket-day-selector">
-                <option value="Monday">Senin</option>
-                <option value="Tuesday">Selasa</option>
-                <option value="Wednesday">Rabu</option>
-                <option value="Thursday">Kamis</option>
-                <option value="Friday">Jumat</option>
-            </select>
-        </label>
+        
         <label>
             Search students
             <input type="text" id="piket-student-search" placeholder="Type name or NIS..." />
         </label>
+        
         <div class="piket-builder-layout">
             <div class="piket-student-pool">
-                <h4>All students</h4>
+                <h4>📋 All Students</h4>
                 <div id="piket-student-list" class="student-search-list"></div>
+                <p class="hint">Klik siswa untuk menambahkan ke Senin (klik lagi untuk mengubah hari)</p>
             </div>
             <div class="piket-selected-pool">
-                <h4>Selected for <span id="piket-day-label">Senin</span></h4>
-                <div id="piket-selected-students" class="selected-students"></div>
+                <h4>📅 Jadwal Mingguan</h4>
+                <div class="day-row">
+                    <span class="day-label">Senin:</span>
+                    <div id="piket-mon-list" class="day-tags"></div>
+                </div>
+                <div class="day-row">
+                    <span class="day-label">Selasa:</span>
+                    <div id="piket-tue-list" class="day-tags"></div>
+                </div>
+                <div class="day-row">
+                    <span class="day-label">Rabu:</span>
+                    <div id="piket-wed-list" class="day-tags"></div>
+                </div>
+                <div class="day-row">
+                    <span class="day-label">Kamis:</span>
+                    <div id="piket-thu-list" class="day-tags"></div>
+                </div>
+                <div class="day-row">
+                    <span class="day-label">Jumat:</span>
+                    <div id="piket-fri-list" class="day-tags"></div>
+                </div>
             </div>
         </div>
+        
         <div id="piket-json-output" style="display:none;">
+            <h4>Generated JSON:</h4>
             <pre id="piket-json-preview"></pre>
         </div>
+        
         <div id="piket-status" class="status-msg"></div>
+        
         <div class="dialog-actions">
-            <button type="button" id="piket-clear-btn">Clear</button>
-            <button type="button" id="piket-generate-btn">Generate JSON</button>
-            <button type="button" id="piket-save-btn" style="display:none;">💾 Save</button>
+            <button type="button" id="piket-clear-btn">🗑️ Clear All</button>
+            <button type="button" id="piket-generate-btn">📋 Generate JSON</button>
+            <button type="button" id="piket-save-btn" style="display:none;">💾 Save to Sheets</button>
             <button type="button" id="piket-close-btn">Close</button>
         </div>
     </form>
 </dialog>
 
-<script src="jszip.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
