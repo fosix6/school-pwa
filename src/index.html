@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>School Manager</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a73e8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+</head>
+<body>
+    <!-- App Header -->
+    <header class="app-header">
+        <h1>🏫 School Manager</h1>
+        <div id="connection-status" class="status-online">● Online</div>
+    </header>
+
+    <!-- Main Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="today">📋 Hari Ini</button>
+        <button class="tab-btn" data-tab="history">📅 History</button>
+        <button class="tab-btn" data-tab="admin">⚙️ Admin</button>
+    </nav>
+
+    <!-- TAB 1: Today -->
+    <main id="tab-today" class="tab-content active">
+        <!-- Class Selector -->
+        <div class="filter-bar">
+            <select id="class-selector">
+                <option value="">Pilih Kelas...</option>
+            </select>
+            <input type="date" id="date-selector">
+            <button id="refresh-btn" class="icon-btn">🔄</button>
+        </div>
+
+        <!-- Stats Summary -->
+        <div id="stats-summary" class="stats-grid" style="display:none;">
+            <div class="stat-card"><span>✅ Hadir</span><strong id="stat-hadir">0</strong></div>
+            <div class="stat-card"><span>❌ Absen</span><strong id="stat-absen">0</strong></div>
+            <div class="stat-card"><span>🏠 Sakit</span><strong id="stat-sakit">0</strong></div>
+            <div class="stat-card"><span>📝 Izin</span><strong id="stat-izin">0</strong></div>
+        </div>
+
+        <!-- Student List -->
+        <div id="student-list" class="student-grid">
+            <p class="empty-state">Pilih kelas untuk mulai</p>
+        </div>
+
+        <!-- Piket Section -->
+        <div id="piket-section" style="display:none;">
+            <h3>🧹 Piket Hari Ini</h3>
+            <div id="piket-list" class="piket-grid"></div>
+        </div>
+
+        <!-- WhatsApp Share -->
+        <button id="whatsapp-btn" class="share-btn" style="display:none;">📱 Copy WhatsApp Report</button>
+    </main>
+
+    <!-- TAB 2: History -->
+    <main id="tab-history" class="tab-content">
+        <div class="filter-bar">
+            <input type="date" id="history-date">
+            <button id="history-load-btn">📊 Load</button>
+        </div>
+        <div id="history-container">
+            <p class="empty-state">Pilih tanggal untuk melihat rekap</p>
+        </div>
+    </main>
+
+    <!-- TAB 3: Admin -->
+    <main id="tab-admin" class="tab-content">
+        <h3>📥 Import CSV</h3>
+        <p>Upload file CSV dengan kolom: NIS, Nama, Kelas, Jurusan</p>
+        <input type="file" id="csv-upload" accept=".csv">
+        <button id="upload-csv-btn" class="primary-btn">Upload ke Google Sheets</button>
+        <div id="upload-status" class="status-msg"></div>
+        
+        <hr>
+        <h3>📊 Database Stats</h3>
+        <div id="db-stats">
+            <p>Total Siswa: <span id="total-students">-</span></p>
+            <p>Total Absensi: <span id="total-attendance">-</span></p>
+        </div>
+        <button id="clear-cache-btn" class="danger-btn">🗑️ Clear Local Cache</button>
+    </main>
+
+    <!-- Offline Banner -->
+    <div id="offline-banner" class="offline-banner" style="display:none;">
+        ⚠️ Offline - Perubahan akan disimpan saat koneksi kembali
+    </div>
+
+    <!-- Pending Updates Counter -->
+    <div id="pending-counter" class="pending-badge" style="display:none;">📤 0 pending</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

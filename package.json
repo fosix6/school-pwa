@@ -1,0 +1,16 @@
+{
+  "name": "school-pwa",
+  "version": "1.0.0",
+  "description": "School Management PWA with Google Sheets backend",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "dev": "npx serve src",
+    "preview": "npx serve dist"
+  },
+  "keywords": ["pwa", "school", "attendance"],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "serve": "^14.2.0"
+  }
+}
