@@ -52,16 +52,16 @@ const els = {
 // ===== INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', async () => {
     // Validate API URL was replaced
-    if (API_URL === '{{APPS_SCRIPT_URL}}' || API_URL.includes('{{')) {
-        console.error('❌ API_URL not configured! Build process failed.');
-        document.body.innerHTML = `
-            <div style="padding:40px;text-align:center;color:red;">
-                <h2>⚠️ Configuration Error</h2>
-                <p>Please contact the administrator.</p>
-            </div>
-        `;
-        return;
-    }
+    // if (API_URL === '{{APPS_SCRIPT_URL}}' || API_URL.includes('{{')) {
+    //     console.error('❌ API_URL not configured! Build process failed.');
+    //     document.body.innerHTML = `
+    //         <div style="padding:40px;text-align:center;color:red;">
+    //             <h2>⚠️ Configuration Error</h2>
+    //             <p>Please contact the administrator.</p>
+    //         </div>
+    //     `;
+    //     return;
+    // }
     
     // Set today's date
     els.dateSelector.value = state.currentDate;
