@@ -179,19 +179,17 @@ function escapeHtml(str) {
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 async function apiCall(action, params = {}, showLoadingToast = true, method = 'GET') {
-    const actionLabels = {
+        const actionLabels = {
         'getClasses': 'Memuat daftar kelas',
         'getStudents': 'Memuat data siswa',
         'getAttendance': 'Memuat absensi',
         'getPiket': 'Memuat jadwal piket',
-        'getLateness': 'Memuat data keterlambatan',
         'markAttendance': 'Menyimpan absensi',
         'togglePiket': 'Mengupdate piket',
         'uploadPiketPhoto': 'Mengupload foto',
         'getHistory': 'Memuat history',
         'uploadCSV': 'Mengupload CSV',
         'saveConfig': 'Menyimpan konfigurasi',
-        'markLateness': 'Mencatat keterlambatan',
     };
     const label = actionLabels[action] || `Menjalankan ${action}`;
 
@@ -420,6 +418,7 @@ function getCachedData(kelas, date) {
 }
 
 // ===== RENDER STUDENTS =====
+// ===== RENDER STUDENTS =====
 function renderStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
@@ -427,24 +426,26 @@ function renderStudents() {
     }
     
     // Get set of late students for today
-    const lateNIS = new Set(state.lateness.map(l => l.nis));
+    const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
     
     let html = '';
     state.students.forEach(student => {
-        const nis = student[0];
+        const nis = student[0].toString();
         const name = student[1];
-        let status = state.attendance[nis] || 'hadir';
-        const isLate = lateNIS.has(nis.toString());
+        // Get the actual status from attendance
+        const status = state.attendance[nis] || 'hadir';
+        // Check if they're in the lateness list
+        const isLate = lateNIS.has(nis);
         
-        // If student is marked late, override status display
-        const displayStatus = isLate ? 'terlambat' : status;
+        // Determine display status - if in lateness list, show 'telat' regardless of attendance status
+        const displayStatus = isLate ? 'telat' : status;
         
         const statusLabels = {
             hadir: { label: 'Hadir', emoji: 'H', class: 'status-hadir' },
             absen: { label: 'Absen', emoji: 'A', class: 'status-absen' },
             sakit: { label: 'Sakit', emoji: 'S', class: 'status-sakit' },
             izin: { label: 'Izin', emoji: 'I', class: 'status-izin' },
-            terlambat: { label: 'Terlambat', emoji: 'T', class: 'status-terlambat' }
+            telat: { label: 'Telat', emoji: 'T', class: 'status-telat' }
         };
         const info = statusLabels[displayStatus] || statusLabels.hadir;
         
@@ -458,21 +459,18 @@ function renderStudents() {
                     ${info.emoji} ${info.label}
                 </div>
                 <div class="status-btns">
-                    ${['hadir', 'absen', 'sakit', 'izin'].map(s => {
-                        const label = { hadir: 'H', absen: 'A', sakit: 'S', izin: 'I' }[s];
-                        const isActive = status === s && !isLate;
+                    ${['hadir', 'absen', 'sakit', 'izin', 'telat'].map(s => {
+                        const label = { hadir: 'H', absen: 'A', sakit: 'S', izin: 'I', telat: 'T' }[s];
+                        const isActive = displayStatus === s;
+                        const statusClass = s === 'telat' ? 'status-telat' : `status-${s}`;
                         return `
-                            <button class="status-btn ${isActive ? 'active' : ''} status-${s}" 
+                            <button class="status-btn ${isActive ? 'active' : ''} ${statusClass}" 
                                     data-status="${s}" 
                                     onclick="markAttendance('${nis}', '${s}')">
                                 ${label}
                             </button>
                         `;
                     }).join('')}
-                    <button class="status-btn ${isLate ? 'active' : ''} status-terlambat" 
-                            onclick="toggleLateness('${nis}')">
-                        T
-                    </button>
                 </div>
             </div>
         `;
@@ -485,9 +483,29 @@ async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
     
+    // If marking as anything other than 'telat', remove from lateness array
+    if (status !== 'telat') {
+        state.lateness = state.lateness.filter(l => l.nis.toString() !== nis.toString());
+    } else {
+        // If marking as 'telat', add to lateness array if not already there
+        const alreadyLate = state.lateness.some(l => l.nis.toString() === nis.toString());
+        if (!alreadyLate) {
+            const student = state.students.find(s => s[0].toString() === nis.toString());
+            state.lateness.push({
+                nis: nis.toString(),
+                name: student ? student[1] : nis,
+                date: date,
+                timestamp: new Date().toISOString()
+            });
+        }
+    }
+    
+    // Update attendance status
     state.attendance[nis] = status;
     renderStudents();
+    renderLateness();
     updateStats();
+    updateLatenessSelect();
     
     try {
         await apiCall('markAttendance', { nis, date, status, kelas });
@@ -525,47 +543,12 @@ async function markLateness() {
         return;
     }
     
-    const date = els.dateSelector.value;
-    const kelas = els.classSelector.value;
+    // Just call markAttendance with 'telat' status
+    await markAttendance(nis, 'telat');
     
-    // Find student name
-    const student = state.students.find(s => s[0].toString() === nis);
-    const name = student ? student[1] : nis;
-    
-    try {
-        showToast('Mencatat keterlambatan', `${name} terlambat`, 30);
-        await apiCall('markLateness', { nis, date }, false, 'POST');
-        
-        // Add to local state
-        state.lateness.push({
-            nis: nis,
-            name: name,
-            date: date,
-            timestamp: new Date().toISOString()
-        });
-        
-        renderLateness();
-        renderStudents();
-        updateStats();
-        updateLatenessSelect();
-        cacheData(kelas, date);
-        
-        updateToast('Keterlambatan tercatat', `${name} terlambat`, 100);
-        setTimeout(() => hideToastDelayed(800), 500);
-    } catch (error) {
-        queueAction('markLateness', { nis, date });
-        // Still update UI optimistically
-        state.lateness.push({
-            nis: nis,
-            name: name,
-            date: date,
-            timestamp: new Date().toISOString()
-        });
-        renderLateness();
-        renderStudents();
-        updateStats();
-        updateLatenessSelect();
-    }
+    // Reset the select dropdown
+    select.value = '';
+    updateLatenessSelect();
 }
 
 async function toggleLateness(nis) {
