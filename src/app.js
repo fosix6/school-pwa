@@ -834,6 +834,8 @@ document.getElementById('piket-class-selector').addEventListener('change', async
 
 document.getElementById('piket-student-search').addEventListener('input', renderPiketBuilderStudents);
 
+let expandedNis = null; // track which student's picker is open
+
 function renderPiketBuilderStudents() {
     const search = document.getElementById('piket-student-search').value.toLowerCase().trim();
     let filtered = piketState.allStudents;
@@ -841,13 +843,13 @@ function renderPiketBuilderStudents() {
         filtered = filtered.filter(s => s[1].toLowerCase().includes(search) || s[0].toString().includes(search));
     }
     piketState.filteredStudents = filtered;
-    
+
     const list = document.getElementById('piket-student-list');
     if (!filtered.length) {
         list.innerHTML = '<p class="empty-state">Tidak ada siswa yang cocok</p>';
         return;
     }
-    
+
     const selectedNIS = new Set([
         ...piketState.monday.map(s => s[0].toString()),
         ...piketState.tuesday.map(s => s[0].toString()),
@@ -855,34 +857,6 @@ function renderPiketBuilderStudents() {
         ...piketState.thursday.map(s => s[0].toString()),
         ...piketState.friday.map(s => s[0].toString()),
     ]);
-    
-    list.innerHTML = filtered.map(s => {
-        const isSelected = selectedNIS.has(s[0].toString());
-        const assignedDay = findAssignedDay(s[0].toString());
-        const dayLabels = { monday: 'Senin', tuesday: 'Selasa', wednesday: 'Rabu', thursday: 'Kamis', friday: 'Jumat' };
-        const dayLabel = assignedDay ? dayLabels[assignedDay] : '';
-        return `
-            <div class="student-search-item ${isSelected ? 'selected' : ''}" data-nis="${s[0]}">
-                <span class="student-name">${escapeHtml(s[1])}</span>
-                <span class="student-nis">${s[0]}</span>
-                ${isSelected ? ` <span class="assigned-day">📌 ${dayLabel}</span>` : ''}
-            </div>
-        `;
-    }).join('');
-    
-    list.querySelectorAll('.student-search-item').forEach(el => {
-        el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const nis = el.dataset.nis;
-            const student = piketState.allStudents.find(s => s[0].toString() === nis);
-            if (!student) return;
-            showDayPicker(el, nis, student);
-        });
-    });
-}
-
-function showDayPicker(anchorEl, nis, student) {
-    document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
 
     const days = [
         { key: 'monday', label: 'Senin' },
@@ -891,121 +865,66 @@ function showDayPicker(anchorEl, nis, student) {
         { key: 'thursday', label: 'Kamis' },
         { key: 'friday', label: 'Jumat' },
     ];
-    const assignedDay = findAssignedDay(nis);
+    const dayLabels = { monday: 'Senin', tuesday: 'Selasa', wednesday: 'Rabu', thursday: 'Kamis', friday: 'Jumat' };
 
-    const popup = document.createElement('div');
-    popup.className = 'day-picker-popup';
-    
-    Object.assign(popup.style, {
-        position: 'fixed',
-        zIndex: '999999',
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
-        padding: '6px',
-        minWidth: '140px',
-        maxWidth: '180px',
-        top: '0px',
-        left: '0px'
+    list.innerHTML = filtered.map(s => {
+        const nis = s[0].toString();
+        const isSelected = selectedNIS.has(nis);
+        const assignedDay = findAssignedDay(nis);
+        const dayLabel = assignedDay ? dayLabels[assignedDay] : '';
+        const isOpen = expandedNis === nis;
+
+        return `
+            <div class="student-search-item ${isSelected ? 'selected' : ''}" data-nis="${nis}">
+                <div class="student-search-item-row" data-toggle="${nis}">
+                    <span class="student-name">${escapeHtml(s[1])}</span>
+                    <span class="student-nis">${s[0]}</span>
+                    ${isSelected ? ` <span class="assigned-day">📌 ${dayLabel}</span>` : ''}
+                </div>
+                ${isOpen ? `
+                    <div class="inline-day-picker">
+                        ${days.map(d => `
+                            <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-nis="${nis}" data-key="${d.key}">
+                                ${d.label} ${assignedDay === d.key ? '✓' : ''}
+                            </button>
+                        `).join('')}
+                        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-nis="${nis}" data-key="remove">✕ Hapus</button>` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+
+    list.querySelectorAll('[data-toggle]').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const nis = el.dataset.toggle;
+            expandedNis = expandedNis === nis ? null : nis;
+            renderPiketBuilderStudents();
+        });
     });
-    
-    popup.innerHTML = `
-        <div style="font-size:11px;color:var(--text-secondary);padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600;">
-            📅 ${escapeHtml(student[1])}
-        </div>
-        ${days.map(d => `
-            <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-key="${d.key}" style="
-                display: block;
-                width: 100%;
-                text-align: left;
-                padding: 6px 10px;
-                font-size: 13px;
-                border-radius: 6px;
-                border: 1px solid ${assignedDay === d.key ? 'var(--accent)' : 'transparent'};
-                background: ${assignedDay === d.key ? 'var(--accent)' : 'transparent'};
-                color: ${assignedDay === d.key ? 'white' : 'var(--text)'};
-                cursor: pointer;
-                font-family: inherit;
-                margin: 1px 0;
-                transition: background 0.15s;
-            ">
-                ${d.label} ${assignedDay === d.key ? '✓' : ''}
-            </button>
-        `).join('')}
-        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove" style="
-            display: block;
-            width: 100%;
-            text-align: left;
-            padding: 6px 10px;
-            font-size: 13px;
-            border-radius: 6px;
-            border: 1px solid transparent;
-            background: transparent;
-            color: var(--danger);
-            cursor: pointer;
-            font-family: inherit;
-            margin: 1px 0;
-        ">✕ Hapus dari jadwal</button>` : ''}
-        <div style="font-size:10px;color:var(--text-secondary);padding:4px 8px;border-top:1px solid var(--border);margin-top:4px;text-align:center;">
-            Klik di luar untuk tutup
-        </div>
-    `;
 
-    const rect = anchorEl.getBoundingClientRect();
-    const popupWidth = 160;
-    let left = rect.left;
-    let top = rect.bottom + 6;
-    
-    if (left + popupWidth > window.innerWidth - 10) {
-        left = window.innerWidth - popupWidth - 10;
-    }
-    if (left < 10) left = 10;
-    
-    if (top + 250 > window.innerHeight - 10) {
-        top = rect.top - 250 - 6;
-    }
-    if (top < 10) top = 10;
-
-    popup.style.top = top + 'px';
-    popup.style.left = left + 'px';
-
-    popup.querySelectorAll('.day-picker-btn').forEach(btn => {
-        btn.addEventListener('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
+    list.querySelectorAll('.inline-day-picker .day-picker-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const nis = btn.dataset.nis;
             const key = btn.dataset.key;
-            
+            const student = piketState.allStudents.find(s => s[0].toString() === nis);
+            if (!student) return;
+
             ['monday','tuesday','wednesday','thursday','friday'].forEach(d => {
                 piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
             });
-            
             if (key !== 'remove') {
                 piketState[key].push(student);
             }
-            
-            popup.remove();
+
+            expandedNis = null;
             renderPiketBuilderStudents();
             updatePiketSelectedDisplay();
             document.getElementById('piket-save-btn').style.display = 'none';
         });
     });
-
-    const closeHandler = (ev) => {
-        if (!popup.contains(ev.target)) {
-            popup.remove();
-            document.removeEventListener('click', closeHandler);
-            document.removeEventListener('scroll', closeHandler);
-        }
-    };
-
-    const dialog = document.getElementById('piketBuilderDialog');
-    dialog.appendChild(popup);
-    
-    setTimeout(() => {
-        document.addEventListener('click', closeHandler);
-        document.addEventListener('scroll', closeHandler);
-    }, 50);
 }
 
 function findAssignedDay(nis) {

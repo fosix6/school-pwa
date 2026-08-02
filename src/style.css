@@ -742,3 +742,26 @@ dialog input:focus, dialog select:focus {
 
 /* ===== MISC ===== */
 hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.student-search-item {
+    flex-direction: column;
+    align-items: stretch;
+}
+.student-search-item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+.inline-day-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+.inline-day-picker .day-picker-btn {
+    flex: 1;
+    min-width: 60px;
+    text-align: center;
+}
