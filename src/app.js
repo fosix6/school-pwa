@@ -908,16 +908,54 @@ function showDayPicker(anchorEl, nis, student) {
 
     const popup = document.createElement('div');
     popup.className = 'day-picker-popup';
+    popup.style.cssText = `
+        position: fixed !important;
+        z-index: 99999 !important;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 4px 24px rgba(0,0,0,0.25);
+        padding: 6px;
+        min-width: 140px;
+        max-width: 180px;
+    `;
+    
     popup.innerHTML = `
         <div style="font-size:11px;color:var(--text-secondary);padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600;">
             📅 ${escapeHtml(student[1])}
         </div>
         ${days.map(d => `
-            <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-key="${d.key}">
+            <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-key="${d.key}" style="
+                display: block;
+                width: 100%;
+                text-align: left;
+                padding: 6px 10px;
+                font-size: 13px;
+                border-radius: 6px;
+                border: 1px solid ${assignedDay === d.key ? 'var(--accent)' : 'transparent'};
+                background: ${assignedDay === d.key ? 'var(--accent)' : 'transparent'};
+                color: ${assignedDay === d.key ? 'white' : 'var(--text)'};
+                cursor: pointer;
+                font-family: inherit;
+                margin: 1px 0;
+            ">
                 ${d.label} ${assignedDay === d.key ? '✓' : ''}
             </button>
         `).join('')}
-        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove">✕ Hapus dari jadwal</button>` : ''}
+        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove" style="
+            display: block;
+            width: 100%;
+            text-align: left;
+            padding: 6px 10px;
+            font-size: 13px;
+            border-radius: 6px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--danger);
+            cursor: pointer;
+            font-family: inherit;
+            margin: 1px 0;
+        ">✕ Hapus dari jadwal</button>` : ''}
         <div style="font-size:10px;color:var(--text-secondary);padding:4px 8px;border-top:1px solid var(--border);margin-top:4px;text-align:center;">
             Klik di luar untuk tutup
         </div>
@@ -940,17 +978,8 @@ function showDayPicker(anchorEl, nis, student) {
     }
     if (top < 10) top = 10;
 
-    popup.style.position = 'fixed';
     popup.style.top = `${top}px`;
     popup.style.left = `${left}px`;
-    popup.style.zIndex = '99999';
-    popup.style.background = 'var(--surface)';
-    popup.style.border = '1px solid var(--border)';
-    popup.style.borderRadius = '8px';
-    popup.style.boxShadow = '0 4px 24px rgba(0,0,0,0.2)';
-    popup.style.padding = '6px';
-    popup.style.minWidth = '140px';
-    popup.style.maxWidth = '180px';
 
     // Handle button clicks
     popup.querySelectorAll('.day-picker-btn').forEach(btn => {

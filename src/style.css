@@ -396,8 +396,16 @@ dialog {
     color: var(--text);
     background: var(--surface);
     box-shadow: 0 8px 40px rgba(0,0,0,0.15);
+    z-index: 1000;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
 }
-dialog::backdrop { background: rgba(0,0,0,0.35); }
+dialog::backdrop {
+    background: rgba(0,0,0,0.35);
+    z-index: 999;
+}
 
 dialog h2 {
     margin: 0 0 0.25rem 0;
@@ -538,14 +546,18 @@ dialog input:focus, dialog select:focus {
 .selected-student-tag:hover { background: var(--danger); }
 
 /* ===== DAY PICKER POPUP ===== */
+
+/* ===== DAY PICKER POPUP ===== */
 .day-picker-popup {
+    z-index: 99999 !important;
+    position: fixed !important;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.25);
     padding: 6px;
     min-width: 140px;
-    z-index: 9999;
+    max-width: 180px;
 }
 .day-picker-btn {
     display: block;
