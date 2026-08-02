@@ -999,7 +999,8 @@ function showDayPicker(anchorEl, nis, student) {
         }
     };
 
-    document.body.appendChild(popup);
+    const dialog = document.getElementById('piketBuilderDialog');
+    dialog.appendChild(popup);
     
     setTimeout(() => {
         document.addEventListener('click', closeHandler);

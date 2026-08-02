@@ -1,8 +1,7 @@
 :root {
-    --bg: #f0ede8;
     --surface: #ffffff;
     --border: #d5d2c9;
-    --text: #1e1e1c;
+    --text: #00000;
     --text-secondary: #5f5d58;
     --accent: #1a6bb0;
     --accent-hover: #155a96;
@@ -396,7 +395,7 @@ dialog {
     color: var(--text);
     background: var(--surface);
     box-shadow: 0 8px 40px rgba(0,0,0,0.15);
-    z-index: 1000;
+    z-index: 1000000;
     position: fixed;
     top: 50%;
     left: 50%;
