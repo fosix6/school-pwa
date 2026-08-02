@@ -781,3 +781,52 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     transition: transform var(--transition);
 }
 .piket-thumb:hover { transform: scale(1.05); }
+/* ===== TODAY LANDING CARDS ===== */
+.today-landing-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 0.5rem;
+}
+.nav-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem 1rem;
+    text-align: center;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.nav-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+}
+.nav-card:active { transform: scale(0.97); }
+.nav-card-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+}
+.nav-card-title {
+    font-weight: 700;
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+.nav-card-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.today-subview { margin-top: 0.5rem; }
+
+.back-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 4px 0;
+    margin-bottom: 0.75rem;
+    cursor: pointer;
+}
+.back-btn:hover { text-decoration: underline; background: none; }

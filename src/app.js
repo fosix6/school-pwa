@@ -49,6 +49,11 @@ const els = {
     toastDetail: $('toast-detail'),
     toastProgress: $('toast-progress'),
     tabBtns: document.querySelectorAll('.tab-btn'),
+    todayLanding: $('today-landing'),
+    todayAttendanceView: $('today-attendance-view'),
+    todayPiketView: $('today-piket-view'),
+    landingAttSummary: $('landing-att-summary'),
+    landingPiketSummary: $('landing-piket-summary'),
 };
 
 // ========================================
@@ -322,6 +327,20 @@ async function loadClasses() {
     }
 }
 
+function updateLandingSummaries() {
+    const total = state.students ? state.students.length : 0;
+    const absen = document.getElementById('stat-absen')?.textContent || '0';
+    els.landingAttSummary.textContent = total
+        ? `${total} siswa · ${absen} absen`
+        : 'Tidak ada data';
+
+    const totalPiket = state.piket ? state.piket.length : 0;
+    const donePiket = state.piket ? state.piket.filter(p => p.done).length : 0;
+    els.landingPiketSummary.textContent = totalPiket
+        ? `${donePiket}/${totalPiket} selesai`
+        : 'Tidak ada piket';
+}
+
 // ===== LOAD STUDENTS =====
 async function loadStudents(kelas, date) {
     if (!kelas) {
@@ -350,6 +369,7 @@ async function loadStudents(kelas, date) {
         renderStudents();
         renderPiket();
         updateStats();
+        updateLandingSummaries();   // add this
         
         els.piketSection.style.display = 'block';
         els.whatsappBtn.style.display = 'block';
@@ -744,6 +764,46 @@ async function uploadCSV() {
     };
     reader.readAsText(file);
 }
+
+// ===== TODAY SUBVIEW SWITCHING =====
+function showTodayView(view) {
+    els.todayLanding.style.display = view === 'landing' ? 'grid' : 'none';
+    els.todayAttendanceView.style.display = view === 'attendance' ? 'block' : 'none';
+    els.todayPiketView.style.display = view === 'piket' ? 'block' : 'none';
+}
+
+function setupTodayNav() {
+    document.querySelectorAll('.nav-card').forEach(card => {
+        card.addEventListener('click', () => {
+            showTodayView(card.dataset.view);
+        });
+    });
+    document.querySelectorAll('[data-back]').forEach(btn => {
+        btn.addEventListener('click', () => showTodayView('landing'));
+    });
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+    els.dateSelector.value = state.currentDate;
+    els.historyDate.value = state.currentDate;
+    
+    switchTab('today');
+    setupTodayNav();
+    showTodayView('landing');
+    
+    await loadClasses();
+    setupEventListeners();
+    registerSW();
+    updateOnlineStatus();
+    processPendingActions();
+    
+    setTimeout(async () => {
+        if (els.classSelector.options.length > 1) {
+            els.classSelector.value = els.classSelector.options[1].value;
+            await loadStudents(els.classSelector.value, els.dateSelector.value);
+        }
+    }, 300);
+});
 
 // ========================================
 // PIKET SCHEDULE BUILDER (Full Week)

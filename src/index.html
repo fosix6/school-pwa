@@ -29,26 +29,49 @@
                 <option value="">Pilih Kelas...</option>
             </select>
             <input type="date" id="date-selector">
-            <button id="refresh-btn" class="icon-btn">Refetch</button>
+            <button id="refresh-btn" class="icon-btn">🔄</button>
         </div>
 
-        <div id="stats-summary" class="stats-grid" style="display:none;">
-            <div class="stat-card stat-hadir"><span>Hadir</span><strong id="stat-hadir">0</strong></div>
-            <div class="stat-card stat-absen"><span>Absen</span><strong id="stat-absen">0</strong></div>
-            <div class="stat-card stat-sakit"><span>Sakit</span><strong id="stat-sakit">0</strong></div>
-            <div class="stat-card stat-izin"><span>Izin</span><strong id="stat-izin">0</strong></div>
+        <div id="today-landing" class="today-landing-grid">
+            <div class="nav-card" data-view="attendance">
+                <div class="nav-card-icon">📋</div>
+                <div class="nav-card-title">Absensi</div>
+                <div class="nav-card-sub" id="landing-att-summary">Pilih kelas dulu</div>
+            </div>
+            <div class="nav-card" data-view="piket">
+                <div class="nav-card-icon">🧹</div>
+                <div class="nav-card-title">Piket</div>
+                <div class="nav-card-sub" id="landing-piket-summary">Pilih kelas dulu</div>
+            </div>
         </div>
 
-        <div id="student-list" class="student-grid">
-            <p class="empty-state">Pilih kelas untuk mulai</p>
+        <!-- ATTENDANCE SUBVIEW -->
+        <div id="today-attendance-view" class="today-subview" style="display:none;">
+            <button class="back-btn" data-back>← Kembali</button>
+
+            <div id="stats-summary" class="stats-grid" style="display:none;">
+                <div class="stat-card stat-hadir"><span>Hadir</span><strong id="stat-hadir">0</strong></div>
+                <div class="stat-card stat-absen"><span>Alpha</span><strong id="stat-absen">0</strong></div>
+                <div class="stat-card stat-sakit"><span>Sakit</span><strong id="stat-sakit">0</strong></div>
+                <div class="stat-card stat-izin"><span>Izin</span><strong id="stat-izin">0</strong></div>
+            </div>
+
+            <div id="student-list" class="student-grid">
+                <p class="empty-state">Pilih kelas untuk mulai</p>
+            </div>
+
+            <button id="whatsapp-btn" class="share-btn" style="display:none;">Copy WhatsApp Report</button>
         </div>
 
-        <div id="piket-section" style="display:none;">
-            <h3>Piket Hari Ini</h3>
-            <div id="piket-list" class="piket-grid"></div>
-        </div>
+        <!-- PIKET SUBVIEW -->
+        <div id="today-piket-view" class="today-subview" style="display:none;">
+            <button class="back-btn" data-back>← Kembali</button>
 
-        <button id="whatsapp-btn" class="share-btn" style="display:none;">Copy WhatsApp Report</button>
+            <div id="piket-section">
+                <h3>🧹 Piket Hari Ini</h3>
+                <div id="piket-list" class="piket-grid"></div>
+            </div>
+        </div>
     </main>
 
     <main id="tab-history" class="tab-content">
