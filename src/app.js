@@ -331,6 +331,7 @@ async function loadClasses() {
 }
 
 // ===== LOAD STUDENTS =====
+// ===== LOAD STUDENTS =====
 async function loadStudents(kelas, date) {
     if (!kelas) {
         els.studentList.innerHTML = '<p class="empty-state">Pilih kelas untuk mulai</p>';
@@ -344,11 +345,10 @@ async function loadStudents(kelas, date) {
     try {
         showToast('Memuat data kelas', `Kelas ${kelas} - ${formatDate(date)}`, 20);
         
-        const [studentData, attData, piketData, latenessData] = await Promise.all([
+        const [studentData, attData, piketData] = await Promise.all([
             apiCall('getStudents', { kelas }, false),
             apiCall('getAttendance', { date, kelas }, false),
-            apiCall('getPiket', { date, kelas }, false),
-            apiCall('getLateness', { date, kelas }, false)
+            apiCall('getPiket', { date, kelas }, false)
         ]);
         
         updateToast('Memproses data', 'Menyusun tampilan...', 80);
@@ -356,7 +356,22 @@ async function loadStudents(kelas, date) {
         state.students = studentData.students || [];
         state.attendance = attData.attendance || {};
         state.piket = piketData.piket || [];
-        state.lateness = latenessData.lateness || [];
+        
+        // FIX: Build lateness from attendance data where status is 'telat'
+        state.lateness = [];
+        for (const [nis, status] of Object.entries(state.attendance)) {
+            if (status === 'telat') {
+                const student = state.students.find(s => s[0].toString() === nis);
+                if (student) {
+                    state.lateness.push({
+                        nis: nis,
+                        name: student[1],
+                        date: date,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+        }
         
         renderStudents();
         renderPiket();
@@ -379,7 +394,23 @@ async function loadStudents(kelas, date) {
             state.students = cached.students || [];
             state.attendance = cached.attendance || {};
             state.piket = cached.piket || [];
-            state.lateness = cached.lateness || [];
+            
+            // FIX: Build lateness from cached attendance data
+            state.lateness = [];
+            for (const [nis, status] of Object.entries(state.attendance)) {
+                if (status === 'telat') {
+                    const student = state.students.find(s => s[0].toString() === nis);
+                    if (student) {
+                        state.lateness.push({
+                            nis: nis,
+                            name: student[1],
+                            date: date,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                }
+            }
+            
             renderStudents();
             renderPiket();
             renderLateness();
@@ -399,6 +430,22 @@ async function loadStudents(kelas, date) {
 
 // ===== CACHE =====
 function cacheData(kelas, date) {
+    // Rebuild lateness from attendance before caching
+    state.lateness = [];
+    for (const [nis, status] of Object.entries(state.attendance)) {
+        if (status === 'telat') {
+            const student = state.students.find(s => s[0].toString() === nis);
+            if (student) {
+                state.lateness.push({
+                    nis: nis,
+                    name: student[1],
+                    date: date,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
+    }
+    
     const cache = {
         students: state.students,
         attendance: state.attendance,
@@ -418,26 +465,25 @@ function getCachedData(kelas, date) {
 }
 
 // ===== RENDER STUDENTS =====
-// ===== RENDER STUDENTS =====
 function renderStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
     
-    // Get set of late students for today
+    // Build lateness NIS set from state.lateness
     const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
     
     let html = '';
     state.students.forEach(student => {
         const nis = student[0].toString();
         const name = student[1];
-        // Get the actual status from attendance
+        // Get status from attendance
         const status = state.attendance[nis] || 'hadir';
-        // Check if they're in the lateness list
-        const isLate = lateNIS.has(nis);
+        // Check if in lateness list - this will also show 'telat' if the status is 'telat'
+        const isLate = lateNIS.has(nis) || status === 'telat';
         
-        // Determine display status - if in lateness list, show 'telat' regardless of attendance status
+        // Determine display status
         const displayStatus = isLate ? 'telat' : status;
         
         const statusLabels = {
@@ -483,25 +529,25 @@ async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
     
-    // If marking as anything other than 'telat', remove from lateness array
-    if (status !== 'telat') {
-        state.lateness = state.lateness.filter(l => l.nis.toString() !== nis.toString());
-    } else {
-        // If marking as 'telat', add to lateness array if not already there
-        const alreadyLate = state.lateness.some(l => l.nis.toString() === nis.toString());
-        if (!alreadyLate) {
-            const student = state.students.find(s => s[0].toString() === nis.toString());
-            state.lateness.push({
-                nis: nis.toString(),
-                name: student ? student[1] : nis,
-                date: date,
-                timestamp: new Date().toISOString()
-            });
+    // Update attendance
+    state.attendance[nis] = status;
+    
+    // Rebuild lateness from attendance
+    state.lateness = [];
+    for (const [sNis, sStatus] of Object.entries(state.attendance)) {
+        if (sStatus === 'telat') {
+            const student = state.students.find(s => s[0].toString() === sNis);
+            if (student) {
+                state.lateness.push({
+                    nis: sNis,
+                    name: student[1],
+                    date: date,
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
     }
     
-    // Update attendance status
-    state.attendance[nis] = status;
     renderStudents();
     renderLateness();
     updateStats();
@@ -767,17 +813,18 @@ function compressImage(file, maxDim = 1000, quality = 0.7) {
 
 // ===== UPDATE STATS =====
 function updateStats() {
-    const stats = { hadir: 0, absen: 0, sakit: 0, izin: 0, terlambat: 0 };
-    const lateNIS = new Set(state.lateness.map(l => l.nis));
+    const stats = { hadir: 0, absen: 0, sakit: 0, izin: 0, telat: 0 };
     
     if (state.students) {
         state.students.forEach(student => {
-            const nis = student[0];
+            const nis = student[0].toString();
             const status = state.attendance[nis] || 'hadir';
-            if (lateNIS.has(nis.toString())) {
-                stats.terlambat++;
+            // Count the status as-is from attendance
+            if (stats[status] !== undefined) {
+                stats[status]++;
             } else {
-                stats[status] = (stats[status] || 0) + 1;
+                // If status is something unexpected, count as hadir
+                stats.hadir++;
             }
         });
     }
@@ -786,7 +833,7 @@ function updateStats() {
     els.statAbsen.textContent = stats.absen;
     els.statSakit.textContent = stats.sakit;
     els.statIzin.textContent = stats.izin;
-    els.statTerlambat.textContent = stats.terlambat;
+    els.statTerlambat.textContent = stats.telat;
 }
 
 // ===== WHATSAPP REPORT =====
