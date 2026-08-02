@@ -507,8 +507,8 @@ function renderPiket() {
                 </div>
                 ${(hasPhoto1 || hasPhoto2) ? `
                     <div class="piket-photos">
-                        ${hasPhoto1 ? `<a href="${piket.photo1}" target="_blank">📸 Foto 1</a>` : ''}
-                        ${hasPhoto2 ? `<a href="${piket.photo2}" target="_blank">📸 Foto 2</a>` : ''}
+                        ${hasPhoto1 ? `<a href="${piket.photo1}" target="_blank"><img src="${piket.photo1}" class="piket-thumb" alt="Foto 1"></a>` : ''}
+                        ${hasPhoto2 ? `<a href="${piket.photo2}" target="_blank"><img src="${piket.photo2}" class="piket-thumb" alt="Foto 2"></a>` : ''}
                     </div>
                 ` : ''}
             </div>
@@ -541,40 +541,67 @@ async function togglePiket(id, done) {
     }
 }
 
-// ===== UPLOAD PIKET PHOTO =====
 async function uploadPiketPhoto(id, photoNum) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    input.capture = 'environment';
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            const base64 = event.target.result;
+
+        try {
+            const base64 = await compressImage(file, 1000, 0.7);
             const piketEl = document.getElementById(`piket-${id}`);
             if (piketEl) piketEl.style.opacity = '0.5';
-            try {
-                showToast('📷 Mengupload foto', 'Mengirim ke server...', 30);
-                const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false);
-                if (result.success) {
-                    updateToast('✅ Foto terupload', 'Berhasil!', 100);
-                    setTimeout(() => hideToastDelayed(800), 500);
-                    await loadStudents(els.classSelector.value, els.dateSelector.value);
-                } else {
-                    showToast('❌ Gagal upload', result.error || 'Unknown error', null, true);
-                    setTimeout(() => hideToastDelayed(2000), 1500);
-                }
-            } catch (error) {
-                showToast('❌ Gagal upload', 'Periksa koneksi', null, true);
+
+            showToast('📷 Mengupload foto', 'Mengirim ke server...', 30);
+            const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false);
+            if (result.success) {
+                updateToast('✅ Foto terupload', 'Berhasil!', 100);
+                setTimeout(() => hideToastDelayed(800), 500);
+                await loadStudents(els.classSelector.value, els.dateSelector.value);
+            } else {
+                showToast('❌ Gagal upload', result.error || 'Unknown error', null, true);
                 setTimeout(() => hideToastDelayed(2000), 1500);
-            } finally {
-                if (piketEl) piketEl.style.opacity = '1';
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+            showToast('❌ Gagal upload', error.message || 'Periksa koneksi', null, true);
+            setTimeout(() => hideToastDelayed(2000), 1500);
+        } finally {
+            const piketEl = document.getElementById(`piket-${id}`);
+            if (piketEl) piketEl.style.opacity = '1';
+        }
     };
     input.click();
+}
+
+function compressImage(file, maxDim = 1000, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > height && width > maxDim) {
+                    height = Math.round(height * (maxDim / width));
+                    width = maxDim;
+                } else if (height > maxDim) {
+                    width = Math.round(width * (maxDim / height));
+                    height = maxDim;
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => reject(new Error('Gagal membaca gambar'));
+            img.src = e.target.result;
+        };
+        reader.onerror = () => reject(new Error('Gagal membaca file'));
+        reader.readAsDataURL(file);
+    });
 }
 
 // ===== UPDATE STATS =====

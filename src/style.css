@@ -765,3 +765,19 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     min-width: 60px;
     text-align: center;
 }
+.piket-photos {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.piket-thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    transition: transform var(--transition);
+}
+.piket-thumb:hover { transform: scale(1.05); }
