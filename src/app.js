@@ -58,7 +58,6 @@ const piketEls = {
     saveBtn: document.getElementById('piket-save-btn'),
     clearBtn: document.getElementById('piket-clear-btn'),
     status: document.getElementById('piket-status'),
-    // Day slots
     monList: document.getElementById('piket-mon-list'),
     tueList: document.getElementById('piket-tue-list'),
     wedList: document.getElementById('piket-wed-list'),
@@ -69,13 +68,11 @@ const piketEls = {
 let piketState = {
     kelas: '',
     allStudents: [],
-    // Each day stores selected students
     monday: [],
     tuesday: [],
     wednesday: [],
     thursday: [],
     friday: [],
-    // For search/filter
     filteredStudents: [],
 };
 
@@ -272,22 +269,35 @@ function renderStudents() {
         const nis = student[0];
         const name = student[1];
         const status = state.attendance[nis] || 'hadir';
-        const statusClass = `active-${status}`;
+        const statusLabels = {
+            hadir: { label: 'Hadir', emoji: '✅', class: 'status-hadir' },
+            absen: { label: 'Absen', emoji: '❌', class: 'status-absen' },
+            sakit: { label: 'Sakit', emoji: '🏠', class: 'status-sakit' },
+            izin: { label: 'Izin', emoji: '📝', class: 'status-izin' }
+        };
+        const info = statusLabels[status] || statusLabels.hadir;
         
         html += `
-            <div class="student-card" data-nis="${nis}">
+            <div class="student-card status-${status}">
                 <div class="student-info">
                     <span class="student-name">${escapeHtml(name)}</span>
-                    <span class="student-nis">NIS: ${nis}</span>
+                    <span class="student-nis">#${nis}</span>
+                </div>
+                <div class="student-status-badge ${info.class}">
+                    ${info.emoji} ${info.label}
                 </div>
                 <div class="status-btns">
-                    ${['hadir', 'absen', 'sakit', 'izin'].map(s => `
-                        <button class="status-btn ${status === s ? statusClass : ''}" 
-                                data-status="${s}" 
-                                onclick="markAttendance('${nis}', '${s}')">
-                            ${s === 'hadir' ? '✅' : s === 'absen' ? '❌' : s === 'sakit' ? '🏠' : '📝'}
-                        </button>
-                    `).join('')}
+                    ${['hadir', 'absen', 'sakit', 'izin'].map(s => {
+                        const label = { hadir: '✅', absen: '❌', sakit: '🏠', izin: '📝' }[s];
+                        const isActive = status === s;
+                        return `
+                            <button class="status-btn ${isActive ? 'active' : ''} status-${s}" 
+                                    data-status="${s}" 
+                                    onclick="markAttendance('${nis}', '${s}')">
+                                ${label}
+                            </button>
+                        `;
+                    }).join('')}
                 </div>
             </div>
         `;
@@ -486,10 +496,17 @@ async function loadHistory() {
         if (data.attendance && data.attendance.length) {
             html += `<div class="student-grid">`;
             data.attendance.forEach(record => {
+                const statusLabels = {
+                    hadir: '✅ Hadir',
+                    absen: '❌ Absen',
+                    sakit: '🏠 Sakit',
+                    izin: '📝 Izin'
+                };
+                const label = statusLabels[record.status] || record.status;
                 html += `
-                    <div class="student-card">
+                    <div class="student-card status-${record.status}">
                         <span class="student-name">${escapeHtml(record.name)}</span>
-                        <span>${record.status}</span>
+                        <span class="student-status-badge status-${record.status}">${label}</span>
                     </div>
                 `;
             });
@@ -565,7 +582,6 @@ async function openPiketBuilderDialog() {
         selector.appendChild(opt);
     });
     
-    // Reset state
     piketState.kelas = '';
     piketState.allStudents = [];
     piketState.monday = [];
@@ -581,7 +597,6 @@ async function openPiketBuilderDialog() {
     document.getElementById('piket-status').className = '';
     document.getElementById('piket-save-btn').style.display = 'none';
     
-    // Clear day lists
     document.getElementById('piket-mon-list').innerHTML = '';
     document.getElementById('piket-tue-list').innerHTML = '';
     document.getElementById('piket-wed-list').innerHTML = '';
@@ -604,7 +619,7 @@ function updatePiketSelectedDisplay() {
         const container = document.getElementById(day.id);
         if (!container) return;
         if (!day.data.length) {
-            container.innerHTML = `<span class="empty-state" style="padding:4px;font-size:12px;">Belum ada siswa</span>`;
+            container.innerHTML = `<span class="empty-tag">Belum ada siswa</span>`;
             return;
         }
         container.innerHTML = day.data.map(s => `
@@ -710,20 +725,28 @@ function showDayPicker(anchorEl, nis, student) {
     const popup = document.createElement('div');
     popup.className = 'day-picker-popup';
     popup.innerHTML = `
+        <div style="font-size:11px;color:var(--text-secondary);padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;">
+            Pilih hari untuk ${escapeHtml(student[1])}
+        </div>
         ${days.map(d => `
             <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-key="${d.key}">
-                ${d.label}
+                ${d.label} ${assignedDay === d.key ? '✓' : ''}
             </button>
         `).join('')}
-        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove">✕ Hapus</button>` : ''}
+        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove">✕ Hapus dari jadwal</button>` : ''}
     `;
 
-    // Position relative to viewport, append to body so it's never clipped
     const rect = anchorEl.getBoundingClientRect();
     popup.style.position = 'fixed';
-    popup.style.top = `${rect.bottom + 4}px`;
-    popup.style.left = `${rect.left}px`;
+    popup.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 260)}px`;
+    popup.style.left = `${Math.min(rect.left, window.innerWidth - 160)}px`;
     popup.style.zIndex = '9999';
+    popup.style.background = 'var(--surface)';
+    popup.style.border = '1px solid var(--border)';
+    popup.style.borderRadius = '8px';
+    popup.style.boxShadow = '0 4px 20px rgba(0,0,0,0.15)';
+    popup.style.padding = '6px';
+    popup.style.minWidth = '150px';
 
     popup.querySelectorAll('.day-picker-btn').forEach(btn => {
         btn.addEventListener('click', (ev) => {
@@ -745,7 +768,6 @@ function showDayPicker(anchorEl, nis, student) {
 
     document.body.appendChild(popup);
 
-    // remove any stale close-handler from a previous popup
     if (window._dayPickerCloseHandler) {
         document.removeEventListener('click', window._dayPickerCloseHandler);
         window._dayPickerCloseHandler = null;
@@ -759,7 +781,6 @@ function showDayPicker(anchorEl, nis, student) {
         }
     };
 
-    // attach on next tick so this same click doesn't immediately close it
     setTimeout(() => {
         document.addEventListener('click', window._dayPickerCloseHandler);
     }, 0);
@@ -778,7 +799,6 @@ function removeFromDay(nis, day) {
     piketState[day] = piketState[day].filter(s => s[0].toString() !== nis);
 }
 
-// Day button handlers
 document.querySelectorAll('.piket-day-btn').forEach(btn => {
     btn.onclick = () => {
         const day = btn.dataset.day;
@@ -787,12 +807,10 @@ document.querySelectorAll('.piket-day-btn').forEach(btn => {
         const student = piketState.allStudents.find(s => s[0].toString() === nis);
         if (!student) return;
         
-        // Remove from all days first
         ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach(d => {
             piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
         });
         
-        // Add to selected day
         const dayMap = { 'Senin': 'monday', 'Selasa': 'tuesday', 'Rabu': 'wednesday', 'Kamis': 'thursday', 'Jumat': 'friday' };
         const key = dayMap[day];
         if (key) {
@@ -805,7 +823,6 @@ document.querySelectorAll('.piket-day-btn').forEach(btn => {
     };
 });
 
-// Move student to a specific day via right-click context (simplified - click to cycle)
 function cycleStudentDay(nis) {
     const student = piketState.allStudents.find(s => s[0].toString() === nis);
     if (!student) return;
@@ -817,11 +834,9 @@ function cycleStudentDay(nis) {
         const idx = days.indexOf(currentDay);
         nextIndex = (idx + 1) % days.length;
     }
-    // Remove from all days
     days.forEach(d => {
         piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
     });
-    // Add to next day
     piketState[days[nextIndex]].push(student);
     
     renderPiketBuilderStudents();
@@ -829,7 +844,6 @@ function cycleStudentDay(nis) {
     document.getElementById('piket-save-btn').style.display = 'none';
 }
 
-// Generate full week JSON
 document.getElementById('piket-generate-btn').onclick = () => {
     const kelas = document.getElementById('piket-class-selector').value;
     if (!kelas) {
@@ -868,7 +882,6 @@ document.getElementById('piket-save-btn').onclick = async () => {
             document.getElementById('piket-status').textContent = '✅ Full week schedule saved!';
             document.getElementById('piket-status').className = 'status-msg success';
             document.getElementById('piket-save-btn').style.display = 'none';
-            // Refresh the main view
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         } else {
             document.getElementById('piket-status').textContent = '❌ Failed to save';
@@ -926,9 +939,7 @@ function setupEventListeners() {
         }
     });
     
-    // Admin tab - load piket builder
     document.querySelector('[data-tab="admin"]').addEventListener('click', () => {
-        // Pre-fill class selector if classes are loaded
         setTimeout(() => {
             const piketSelector = document.getElementById('piket-class-selector');
             if (piketSelector && piketSelector.options.length <= 1) {
@@ -986,7 +997,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateOnlineStatus();
     processPendingActions();
     
-    // Auto-load first class if available
     setTimeout(async () => {
         if (els.classSelector.options.length > 1) {
             els.classSelector.value = els.classSelector.options[1].value;
@@ -1003,7 +1013,6 @@ setInterval(() => {
     }
 }, 300000);
 
-// Make functions global for onclick
 window.markAttendance = markAttendance;
 window.togglePiket = togglePiket;
 window.uploadPiketPhoto = uploadPiketPhoto;
