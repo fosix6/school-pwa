@@ -29,49 +29,43 @@
                 <option value="">Pilih Kelas...</option>
             </select>
             <input type="date" id="date-selector">
-            <button id="refresh-btn" class="icon-btn">🔄</button>
+            <button id="refresh-btn" class="icon-btn">Refetch</button>
         </div>
 
-        <div id="today-landing" class="today-landing-grid">
-            <div class="nav-card" data-view="attendance">
-                <div class="nav-card-icon">📋</div>
-                <div class="nav-card-title">Absensi</div>
-                <div class="nav-card-sub" id="landing-att-summary">Pilih kelas dulu</div>
+        <div id="stats-summary" class="stats-grid" style="display:none;">
+            <div class="stat-card stat-hadir"><span>Hadir</span><strong id="stat-hadir">0</strong></div>
+            <div class="stat-card stat-absen"><span>Absen</span><strong id="stat-absen">0</strong></div>
+            <div class="stat-card stat-sakit"><span>Sakit</span><strong id="stat-sakit">0</strong></div>
+            <div class="stat-card stat-izin"><span>Izin</span><strong id="stat-izin">0</strong></div>
+            <div class="stat-card stat-terlambat"><span>Terlambat</span><strong id="stat-terlambat">0</strong></div>
+        </div>
+
+        <div id="student-list" class="student-grid">
+            <p class="empty-state">Pilih kelas untuk mulai</p>
+        </div>
+
+        <!-- Lateness Section -->
+        <div id="lateness-section" style="display:none;">
+            <div class="lateness-header">
+                <h3>Terlambat <span id="lateness-count" class="lateness-badge">0</span></h3>
+                <div class="lateness-input-row">
+                    <select id="late-student-select">
+                        <option value="">Pilih siswa...</option>
+                    </select>
+                    <button id="mark-late-btn" class="lateness-btn">Tandai Terlambat</button>
+                </div>
             </div>
-            <div class="nav-card" data-view="piket">
-                <div class="nav-card-icon">🧹</div>
-                <div class="nav-card-title">Piket</div>
-                <div class="nav-card-sub" id="landing-piket-summary">Pilih kelas dulu</div>
+            <div id="lateness-list" class="lateness-grid">
+                <p class="empty-state">Tidak ada siswa terlambat hari ini</p>
             </div>
         </div>
 
-        <!-- ATTENDANCE SUBVIEW -->
-        <div id="today-attendance-view" class="today-subview" style="display:none;">
-            <button class="back-btn" data-back>← Kembali</button>
-
-            <div id="stats-summary" class="stats-grid" style="display:none;">
-                <div class="stat-card stat-hadir"><span>Hadir</span><strong id="stat-hadir">0</strong></div>
-                <div class="stat-card stat-absen"><span>Alpha</span><strong id="stat-absen">0</strong></div>
-                <div class="stat-card stat-sakit"><span>Sakit</span><strong id="stat-sakit">0</strong></div>
-                <div class="stat-card stat-izin"><span>Izin</span><strong id="stat-izin">0</strong></div>
-            </div>
-
-            <div id="student-list" class="student-grid">
-                <p class="empty-state">Pilih kelas untuk mulai</p>
-            </div>
-
-            <button id="whatsapp-btn" class="share-btn" style="display:none;">Copy WhatsApp Report</button>
+        <div id="piket-section" style="display:none;">
+            <h3>Piket Hari Ini</h3>
+            <div id="piket-list" class="piket-grid"></div>
         </div>
 
-        <!-- PIKET SUBVIEW -->
-        <div id="today-piket-view" class="today-subview" style="display:none;">
-            <button class="back-btn" data-back>← Kembali</button>
-
-            <div id="piket-section">
-                <h3>🧹 Piket Hari Ini</h3>
-                <div id="piket-list" class="piket-grid"></div>
-            </div>
-        </div>
+        <button id="whatsapp-btn" class="share-btn" style="display:none;">Copy WhatsApp Report</button>
     </main>
 
     <main id="tab-history" class="tab-content">

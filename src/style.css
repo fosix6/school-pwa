@@ -11,6 +11,8 @@
     --success-hover: #2f773d;
     --sick: #c98b2a;
     --sick-hover: #b07a24;
+    --late: #e67e22;
+    --late-hover: #d35400;
     --radius: 10px;
     --shadow: 0 2px 8px rgba(0,0,0,0.06);
     --transition: 0.2s ease;
@@ -181,7 +183,7 @@ button:active { transform: scale(0.97); }
 /* ===== STATS GRID ===== */
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 8px;
     margin-bottom: 1.25rem;
 }
@@ -207,6 +209,7 @@ button:active { transform: scale(0.97); }
 .stat-absen strong { color: var(--danger); }
 .stat-sakit strong { color: var(--sick); }
 .stat-izin strong { color: var(--accent); }
+.stat-terlambat strong { color: var(--late); }
 
 /* ===== STUDENT CARDS ===== */
 .student-grid {
@@ -234,6 +237,7 @@ button:active { transform: scale(0.97); }
 .student-card.status-absen { border-left: 4px solid var(--danger); background: #fdf0f0; }
 .student-card.status-sakit { border-left: 4px solid var(--sick); background: #fdf8ee; }
 .student-card.status-izin { border-left: 4px solid var(--accent); background: #f0f5fc; }
+.student-card.status-terlambat { border-left: 4px solid var(--late); background: #fef9f0; }
 
 .student-info {
     flex: 1;
@@ -260,6 +264,7 @@ button:active { transform: scale(0.97); }
 .student-status-badge.status-absen { background: #ffebee; color: var(--danger); }
 .student-status-badge.status-sakit { background: #fff8e1; color: var(--sick); }
 .student-status-badge.status-izin { background: #e3f2fd; color: var(--accent); }
+.student-status-badge.status-terlambat { background: #fef3e2; color: var(--late); }
 
 .status-btns {
     display: flex;
@@ -279,7 +284,98 @@ button:active { transform: scale(0.97); }
 .status-btn.active.status-absen { border-color: var(--danger); background: #ffebee; }
 .status-btn.active.status-sakit { border-color: var(--sick); background: #fff8e1; }
 .status-btn.active.status-izin { border-color: var(--accent); background: #e3f2fd; }
+.status-btn.active.status-terlambat { border-color: var(--late); background: #fef3e2; }
 .status-btn:active { transform: scale(0.93); }
+
+/* ===== LATENESS SECTION ===== */
+.lateness-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0.5rem 0 0.75rem;
+}
+.lateness-header h3 {
+    margin: 0;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.lateness-badge {
+    background: var(--late);
+    color: white;
+    padding: 1px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+}
+.lateness-input-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.lateness-input-row select {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font: inherit;
+    font-size: 13px;
+    background: var(--surface);
+    color: var(--text);
+    min-width: 120px;
+}
+.lateness-input-row select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.lateness-btn {
+    background: var(--late);
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    font-size: 13px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-weight: 600;
+    transition: background var(--transition);
+}
+.lateness-btn:hover { background: var(--late-hover); }
+
+.lateness-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 0.5rem;
+}
+.lateness-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    border-left: 3px solid var(--late);
+}
+.lateness-name {
+    font-weight: 500;
+    font-size: 14px;
+}
+.lateness-time {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.lateness-remove-btn {
+    background: none;
+    border: none;
+    color: var(--danger);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+.lateness-remove-btn:hover { color: var(--danger-hover); }
 
 /* ===== PIKET ITEMS ===== */
 .piket-grid {
@@ -781,52 +877,24 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     transition: transform var(--transition);
 }
 .piket-thumb:hover { transform: scale(1.05); }
-/* ===== TODAY LANDING CARDS ===== */
-.today-landing-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 0.5rem;
-}
-.nav-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.5rem 1rem;
-    text-align: center;
-    box-shadow: var(--shadow);
-    cursor: pointer;
-    transition: all var(--transition);
-}
-.nav-card:hover {
-    border-color: var(--accent);
-    transform: translateY(-2px);
-}
-.nav-card:active { transform: scale(0.97); }
-.nav-card-icon {
-    font-size: 32px;
-    margin-bottom: 8px;
-}
-.nav-card-title {
-    font-weight: 700;
-    font-size: 16px;
-    margin-bottom: 4px;
-}
-.nav-card-sub {
-    font-size: 12px;
-    color: var(--text-secondary);
-}
 
-.today-subview { margin-top: 0.5rem; }
-
-.back-btn {
-    background: none;
-    border: none;
-    color: var(--accent);
-    font-weight: 600;
-    font-size: 14px;
-    padding: 4px 0;
-    margin-bottom: 0.75rem;
-    cursor: pointer;
+/* ===== RESPONSIVE TWEAKS ===== */
+@media (max-width: 480px) {
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .stats-grid .stat-card:nth-child(4),
+    .stats-grid .stat-card:nth-child(5) {
+        /* Allow 5 items to wrap nicely */
+    }
+    .lateness-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .lateness-input-row {
+        width: 100%;
+    }
+    .lateness-input-row select {
+        flex: 1;
+    }
 }
-.back-btn:hover { text-decoration: underline; background: none; }
