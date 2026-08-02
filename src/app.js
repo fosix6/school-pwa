@@ -685,12 +685,13 @@ function renderPiketBuilderStudents() {
     `).join('');
     
     list.querySelectorAll('.student-search-item').forEach(el => {
-        el.onclick = (e) => {
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
             const nis = el.dataset.nis;
             const student = piketState.allStudents.find(s => s[0].toString() === nis);
             if (!student) return;
             showDayPicker(el, nis, student);
-        };
+        });
     });
 }
 
@@ -744,13 +745,23 @@ function showDayPicker(anchorEl, nis, student) {
 
     document.body.appendChild(popup);
 
+    // remove any stale close-handler from a previous popup
+    if (window._dayPickerCloseHandler) {
+        document.removeEventListener('click', window._dayPickerCloseHandler);
+        window._dayPickerCloseHandler = null;
+    }
+
+    window._dayPickerCloseHandler = function closePopup(ev) {
+        if (!popup.contains(ev.target)) {
+            popup.remove();
+            document.removeEventListener('click', window._dayPickerCloseHandler);
+            window._dayPickerCloseHandler = null;
+        }
+    };
+
+    // attach on next tick so this same click doesn't immediately close it
     setTimeout(() => {
-        document.addEventListener('click', function closePopup(ev) {
-            if (!popup.contains(ev.target) && ev.target !== anchorEl) {
-                popup.remove();
-                document.removeEventListener('click', closePopup);
-            }
-        });
+        document.addEventListener('click', window._dayPickerCloseHandler);
     }, 0);
 }
 
