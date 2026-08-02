@@ -170,12 +170,7 @@ function escapeHtml(str) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-// ===== API CALLS WITH TOAST =====
-async function apiCall(action, params = {}, showLoadingToast = true) {
-    const url = new URL(CONFIG.API_URL);
-    url.searchParams.append('action', action);
-    Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
-    
+async function apiCall(action, params = {}, showLoadingToast = true, method = 'GET') {
     const actionLabels = {
         'getClasses': 'Memuat daftar kelas',
         'getStudents': 'Memuat data siswa',
@@ -188,45 +183,41 @@ async function apiCall(action, params = {}, showLoadingToast = true) {
         'uploadCSV': 'Mengupload CSV',
         'saveConfig': 'Menyimpan konfigurasi',
     };
-    
     const label = actionLabels[action] || `Menjalankan ${action}`;
-    
-    if (showLoadingToast) {
-        showToast(label, 'Menghubungi server...', 10);
-    }
-    
+
+    if (showLoadingToast) showToast(label, 'Menghubungi server...', 10);
+
     try {
         updateToast(label, 'Mengirim request...', 30);
-        const startTime = Date.now();
-        
-        const response = await fetch(url.toString());
-        
+        let response;
+
+        if (method === 'POST') {
+            response = await fetch(CONFIG.API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight on Apps Script
+                body: JSON.stringify({ action, ...params }),
+            });
+        } else {
+            const url = new URL(CONFIG.API_URL);
+            url.searchParams.append('action', action);
+            Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+            response = await fetch(url.toString());
+        }
+
         updateToast(label, 'Menerima response...', 70);
-        
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        
         const data = await response.json();
-        
         updateToast(label, 'Selesai!', 100);
-        
-        setTimeout(() => {
-            hideToastDelayed(600);
-        }, 300);
-        
+        setTimeout(() => hideToastDelayed(600), 300);
         return data;
     } catch (error) {
         console.error('API Error:', error);
         showToast(`❌ Gagal: ${label}`, error.message || 'Unknown error', null, true);
-        
         if (!navigator.onLine) {
             queueAction(action, params);
-            setTimeout(() => {
-                hideToastDelayed(1500);
-            }, 1000);
+            setTimeout(() => hideToastDelayed(1500), 1000);
         } else {
-            setTimeout(() => {
-                hideToastDelayed(2000);
-            }, 1500);
+            setTimeout(() => hideToastDelayed(2000), 1500);
         }
         throw error;
     }
@@ -545,7 +536,7 @@ async function uploadPiketPhoto(id, photoNum) {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.capture = 'environment';
+
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -556,7 +547,7 @@ async function uploadPiketPhoto(id, photoNum) {
             if (piketEl) piketEl.style.opacity = '0.5';
 
             showToast('📷 Mengupload foto', 'Mengirim ke server...', 30);
-            const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false);
+            const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false, 'POST');
             if (result.success) {
                 updateToast('✅ Foto terupload', 'Berhasil!', 100);
                 setTimeout(() => hideToastDelayed(800), 500);
