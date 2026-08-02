@@ -542,7 +542,7 @@ async function uploadPiketPhoto(id, photoNum) {
         if (!file) return;
 
         try {
-            const base64 = await compressImage(file, 1000, 0.7);
+            const base64 = await compressImage(file, 2000, 0.9);
             const piketEl = document.getElementById(`piket-${id}`);
             if (piketEl) piketEl.style.opacity = '0.5';
 
