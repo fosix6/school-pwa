@@ -1,5 +1,11 @@
 const CACHE_NAME = 'school-mgr-v2';
-const urlsToCache = ['/', '/index.html', '/style.css', '/app.js', '/manifest.json', '/jszip.min.js'];
+const urlsToCache = [
+    '/',
+    '/index.html',
+    '/style.css',
+    '/app.js',
+    '/manifest.json'
+];
 
 self.addEventListener('install', event => {
     event.waitUntil(
