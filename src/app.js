@@ -212,7 +212,7 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         return data;
     } catch (error) {
         console.error('API Error:', error);
-        showToast(`❌ Gagal: ${label}`, error.message || 'Unknown error', null, true);
+        showToast(`Gagal: ${label}`, error.message || 'Unknown error', null, true);
         if (!navigator.onLine) {
             queueAction(action, params);
             setTimeout(() => hideToastDelayed(1500), 1000);
@@ -229,7 +229,7 @@ function queueAction(action, params) {
     pending.push({ action, params, timestamp: Date.now() });
     localStorage.setItem('pending_actions', JSON.stringify(pending));
     updatePendingCounter();
-    showToast('📤 Disimpan offline', 'Akan disinkronkan saat online', null, false);
+    showToast('Disimpan offline', 'Akan disinkronkan saat online', null, false);
     setTimeout(() => hideToastDelayed(1500), 1000);
 }
 
@@ -237,7 +237,7 @@ async function processPendingActions() {
     const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
     if (!pending.length || !navigator.onLine) return;
     
-    showToast('🔄 Menyinkronkan data offline', `Memproses ${pending.length} item...`, 10);
+    showToast('Menyinkronkan data offline', `Memproses ${pending.length} item...`, 10);
     
     const failed = [];
     let processed = 0;
@@ -247,7 +247,7 @@ async function processPendingActions() {
         try {
             processed++;
             const progress = Math.round((processed / total) * 90);
-            updateToast('🔄 Menyinkronkan data offline', `Item ${processed}/${total}`, progress);
+            updateToast('Menyinkronkan data offline', `Item ${processed}/${total}`, progress);
             await apiCall(item.action, item.params, false);
         } catch (error) {
             failed.push(item);
@@ -260,7 +260,7 @@ async function processPendingActions() {
         setTimeout(() => hideToastDelayed(2000), 1500);
     } else {
         localStorage.removeItem('pending_actions');
-        updateToast('✅ Sinkronisasi selesai', 'Semua data tersimpan', 100);
+        updateToast('Sinkronisasi selesai', 'Semua data tersimpan', 100);
         setTimeout(() => hideToastDelayed(1200), 500);
     }
     updatePendingCounter();
@@ -271,7 +271,7 @@ function updatePendingCounter() {
     const el = document.getElementById('pending-counter');
     if (pending.length && el) {
         el.style.display = 'block';
-        el.textContent = `📤 ${pending.length} pending`;
+        el.textContent = `${pending.length} pending`;
     } else if (el) {
         el.style.display = 'none';
     }
@@ -333,7 +333,7 @@ async function loadStudents(kelas, date) {
     }
     
     try {
-        showToast('📊 Memuat data kelas', `Kelas ${kelas} - ${formatDate(date)}`, 20);
+        showToast('Memuat data kelas', `Kelas ${kelas} - ${formatDate(date)}`, 20);
         
         const [studentData, attData, piketData] = await Promise.all([
             apiCall('getStudents', { kelas }, false),
@@ -341,7 +341,7 @@ async function loadStudents(kelas, date) {
             apiCall('getPiket', { date, kelas }, false)
         ]);
         
-        updateToast('📊 Memproses data', 'Menyusun tampilan...', 80);
+        updateToast('Memproses data', 'Menyusun tampilan...', 80);
         
         state.students = studentData.students || [];
         state.attendance = attData.attendance || {};
@@ -356,7 +356,7 @@ async function loadStudents(kelas, date) {
         els.statsSummary.style.display = 'grid';
         cacheData(kelas, date);
         
-        updateToast('✅ Data siap', `${state.students.length} siswa dimuat`, 100);
+        updateToast('Data siap', `${state.students.length} siswa dimuat`, 100);
         setTimeout(() => hideToastDelayed(600), 300);
         
     } catch (error) {
@@ -371,10 +371,10 @@ async function loadStudents(kelas, date) {
             els.piketSection.style.display = 'block';
             els.whatsappBtn.style.display = 'block';
             els.statsSummary.style.display = 'grid';
-            showToast('📦 Data dari cache', 'Koneksi offline, menggunakan data tersimpan', null, false);
+            showToast('Data dari cache', 'Koneksi offline, menggunakan data tersimpan', null, false);
             setTimeout(() => hideToastDelayed(2000), 1000);
         } else {
-            els.studentList.innerHTML = '<p class="empty-state">❌ Gagal memuat data. Periksa koneksi.</p>';
+            els.studentList.innerHTML = '<p class="empty-state">Gagal memuat data. Periksa koneksi.</p>';
         }
     }
 }
@@ -411,10 +411,10 @@ function renderStudents() {
         const name = student[1];
         const status = state.attendance[nis] || 'hadir';
         const statusLabels = {
-            hadir: { label: 'Hadir', emoji: '✅', class: 'status-hadir' },
-            absen: { label: 'Absen', emoji: '❌', class: 'status-absen' },
-            sakit: { label: 'Sakit', emoji: '🏠', class: 'status-sakit' },
-            izin: { label: 'Izin', emoji: '📝', class: 'status-izin' }
+            hadir: { label: 'Hadir', emoji: 'H', class: 'status-hadir' },
+            absen: { label: 'Absen', emoji: 'A', class: 'status-absen' },
+            sakit: { label: 'Sakit', emoji: 'S', class: 'status-sakit' },
+            izin: { label: 'Izin', emoji: 'I', class: 'status-izin' }
         };
         const info = statusLabels[status] || statusLabels.hadir;
         
@@ -429,7 +429,7 @@ function renderStudents() {
                 </div>
                 <div class="status-btns">
                     ${['hadir', 'absen', 'sakit', 'izin'].map(s => {
-                        const label = { hadir: '✅', absen: '❌', sakit: '🏠', izin: '📝' }[s];
+                        const label = { hadir: 'H', absen: 'A', sakit: 'S', izin: 'I' }[s];
                         const isActive = status === s;
                         return `
                             <button class="status-btn ${isActive ? 'active' : ''} status-${s}" 
@@ -480,20 +480,20 @@ function renderPiket() {
         html += `
             <div class="piket-item ${done ? 'done' : ''}" id="piket-${piket.id}">
                 <div class="piket-info">
-                    <span class="piket-name">👥 ${escapeHtml(names)}</span>
+                    <span class="piket-name">${escapeHtml(names)}</span>
                     <span class="piket-status ${done ? 'done' : 'pending'}">
-                        ${done ? '✅ Selesai' : '⬜ Belum'}
+                        ${done ? 'Selesai' : 'Belum'}
                     </span>
                 </div>
                 <div class="piket-actions">
                     <button class="piket-toggle ${done ? 'done' : ''}" onclick="togglePiket('${piket.id}', ${!done})">
-                        ${done ? '↩️ Batal' : '✅ Selesai'}
+                        ${done ? 'Batal' : 'Selesai'}
                     </button>
                     <button class="piket-photo-btn ${hasPhoto1 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 1)">
-                        📷1
+                        foto 1
                     </button>
                     <button class="piket-photo-btn ${hasPhoto2 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 2)">
-                        📷2
+                        foto 2
                     </button>
                 </div>
                 ${(hasPhoto1 || hasPhoto2) ? `
@@ -546,18 +546,18 @@ async function uploadPiketPhoto(id, photoNum) {
             const piketEl = document.getElementById(`piket-${id}`);
             if (piketEl) piketEl.style.opacity = '0.5';
 
-            showToast('📷 Mengupload foto', 'Mengirim ke server...', 30);
+            showToast('Mengupload foto', 'Mengirim ke server...', 30);
             const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false, 'POST');
             if (result.success) {
-                updateToast('✅ Foto terupload', 'Berhasil!', 100);
+                updateToast('Foto terupload', 'Berhasil!', 100);
                 setTimeout(() => hideToastDelayed(800), 500);
                 await loadStudents(els.classSelector.value, els.dateSelector.value);
             } else {
-                showToast('❌ Gagal upload', result.error || 'Unknown error', null, true);
+                showToast('Gagal upload', result.error || 'Unknown error', null, true);
                 setTimeout(() => hideToastDelayed(2000), 1500);
             }
         } catch (error) {
-            showToast('❌ Gagal upload', error.message || 'Periksa koneksi', null, true);
+            showToast('Gagal upload', error.message || 'Periksa koneksi', null, true);
             setTimeout(() => hideToastDelayed(2000), 1500);
         } finally {
             const piketEl = document.getElementById(`piket-${id}`);
@@ -620,13 +620,13 @@ function copyWhatsAppReport() {
         day: 'numeric', month: 'long', year: 'numeric'
     });
     
-    let report = `📊 *REKAP ABSENSI ${kelas}*\n`;
-    report += `📅 ${formattedDate}\n`;
+    let report = `*REKAP ABSENSI ${kelas}*\n`;
+    report += `${formattedDate}\n`;
     report += `━━━━━━━━━━━━━━━━\n`;
-    report += `✅ Hadir: ${els.statHadir.textContent}\n`;
-    report += `❌ Absen: ${els.statAbsen.textContent}\n`;
-    report += `🏠 Sakit: ${els.statSakit.textContent}\n`;
-    report += `📝 Izin: ${els.statIzin.textContent}\n`;
+    report += `Hadir: ${els.statHadir.textContent}\n`;
+    report += `Absen: ${els.statAbsen.textContent}\n`;
+    report += `Sakit: ${els.statSakit.textContent}\n`;
+    report += `Izin: ${els.statIzin.textContent}\n`;
     report += `━━━━━━━━━━━━━━━━\n`;
     
     if (state.students) {
@@ -634,21 +634,21 @@ function copyWhatsAppReport() {
             .filter(s => state.attendance[s[0]] === 'absen')
             .map(s => s[1]);
         if (absentStudents.length) {
-            report += `❌ Absen: ${absentStudents.join(', ')}\n`;
+            report += `Absen: ${absentStudents.join(', ')}\n`;
         }
     }
     
     if (state.piket && state.piket.length) {
-        report += `\n🧹 *PIKET*:\n`;
+        report += `\n*PIKET*:\n`;
         state.piket.forEach(p => {
-            const status = p.done ? '✅ Selesai' : '⬜ Belum';
+            const status = p.done ? 'Selesai' : 'Belum';
             const names = p.names ? p.names.join(', ') : '';
             report += `${names}: ${status}\n`;
         });
     }
     
     navigator.clipboard.writeText(report).then(() => {
-        showToast('✅ Laporan disalin', 'Tempelkan ke WhatsApp', null, false);
+        showToast('Laporan disalin', 'Tempelkan ke WhatsApp', null, false);
         setTimeout(() => hideToastDelayed(1500), 1000);
     }).catch(() => {
         prompt('Salin teks ini:', report);
@@ -665,21 +665,21 @@ async function loadHistory() {
     }
     
     try {
-        showToast('📅 Memuat history', `Tanggal ${formatDate(date)}`, 20);
+        showToast('Memuat history', `Tanggal ${formatDate(date)}`, 20);
         const data = await apiCall('getHistory', { date }, false);
         
-        updateToast('📅 Memproses history', 'Menyusun data...', 70);
+        updateToast('Memproses history', 'Menyusun data...', 70);
         
-        let html = `<h3>📅 Rekap ${formatDate(date)}</h3>`;
+        let html = `<h3>Rekap ${formatDate(date)}</h3>`;
         
         if (data.attendance && data.attendance.length) {
             html += `<div class="student-grid">`;
             data.attendance.forEach(record => {
                 const statusLabels = {
-                    hadir: '✅ Hadir',
-                    absen: '❌ Absen',
-                    sakit: '🏠 Sakit',
-                    izin: '📝 Izin'
+                    hadir: 'Hadir',
+                    absen: 'Absen',
+                    sakit: 'Sakit',
+                    izin: 'Izin'
                 };
                 const label = statusLabels[record.status] || record.status;
                 html += `
@@ -695,20 +695,20 @@ async function loadHistory() {
         }
         
         if (data.piket && data.piket.length) {
-            html += `<h4>🧹 Piket</h4>`;
+            html += `<h4>Piket</h4>`;
             data.piket.forEach(p => {
                 const names = p.names ? p.names.join(', ') : '';
                 html += `<div class="piket-item">
-                    <span>${escapeHtml(names)}: ${p.done ? '✅ Selesai' : '⬜ Belum'}</span>
+                    <span>${escapeHtml(names)}: ${p.done ? 'Selesai' : 'Belum'}</span>
                 </div>`;
             });
         }
         
         els.historyContainer.innerHTML = html;
-        updateToast('✅ History dimuat', `${data.attendance?.length || 0} record ditemukan`, 100);
+        updateToast('History dimuat', `${data.attendance?.length || 0} record ditemukan`, 100);
         setTimeout(() => hideToastDelayed(800), 500);
     } catch (error) {
-        els.historyContainer.innerHTML = '<p class="empty-state">❌ Gagal memuat history</p>';
+        els.historyContainer.innerHTML = '<p class="empty-state">Gagal memuat history</p>';
     }
 }
 
@@ -725,20 +725,20 @@ async function uploadCSV() {
     reader.onload = async (e) => {
         const csv = e.target.result;
         try {
-            showToast('📤 Mengupload CSV', 'Mengirim ke server...', 30);
+            showToast('Mengupload CSV', 'Mengirim ke server...', 30);
             const result = await apiCall('uploadCSV', { csv: encodeURIComponent(csv) }, false);
             
             if (result.success) {
-                updateToast('✅ Upload berhasil', result.message || 'Data terimport', 100);
+                updateToast('Upload berhasil', result.message || 'Data terimport', 100);
                 setTimeout(() => hideToastDelayed(1200), 500);
                 await loadClasses();
                 await loadStudents(els.classSelector.value, els.dateSelector.value);
             } else {
-                showToast('❌ Upload gagal', result.message || 'Unknown error', null, true);
+                showToast('Upload gagal', result.message || 'Unknown error', null, true);
                 setTimeout(() => hideToastDelayed(2000), 1500);
             }
         } catch (error) {
-            showToast('❌ Upload gagal', 'Periksa koneksi', null, true);
+            showToast('Upload gagal', 'Periksa koneksi', null, true);
             setTimeout(() => hideToastDelayed(2000), 1500);
         }
     };
@@ -829,7 +829,7 @@ document.getElementById('piket-class-selector').addEventListener('change', async
         return;
     }
     try {
-        showToast('📋 Memuat siswa', `Kelas ${kelas}`, 20);
+        showToast('Memuat siswa', `Kelas ${kelas}`, 20);
         const data = await apiCall('getStudents', { kelas }, false);
         piketState.allStudents = data.students || [];
         piketState.monday = [];
@@ -843,10 +843,10 @@ document.getElementById('piket-class-selector').addEventListener('change', async
         document.getElementById('piket-status').textContent = '';
         document.getElementById('piket-status').className = '';
         document.getElementById('piket-save-btn').style.display = 'none';
-        updateToast('✅ Siswa dimuat', `${piketState.allStudents.length} siswa`, 100);
+        updateToast('Siswa dimuat', `${piketState.allStudents.length} siswa`, 100);
         setTimeout(() => hideToastDelayed(600), 300);
     } catch (error) {
-        document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">❌ Gagal memuat siswa</p>';
+        document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">Gagal memuat siswa</p>';
     }
 });
 
@@ -897,7 +897,7 @@ function renderPiketBuilderStudents() {
                 <div class="student-search-item-row" data-toggle="${nis}">
                     <span class="student-name">${escapeHtml(s[1])}</span>
                     <span class="student-nis">${s[0]}</span>
-                    ${isSelected ? ` <span class="assigned-day">📌 ${dayLabel}</span>` : ''}
+                    ${isSelected ? ` <span class="assigned-day">${dayLabel}</span>` : ''}
                 </div>
                 ${isOpen ? `
                     <div class="inline-day-picker">
@@ -974,7 +974,7 @@ document.getElementById('piket-generate-btn').onclick = () => {
     document.getElementById('piket-json-preview').textContent = json;
     document.getElementById('piket-json-output').style.display = 'block';
     document.getElementById('piket-save-btn').style.display = 'inline-block';
-    document.getElementById('piket-status').textContent = '✅ Full week JSON generated';
+    document.getElementById('piket-status').textContent = 'Full week JSON generated';
     document.getElementById('piket-status').className = 'status-msg success';
     piketState.currentSchedule = { key: `piket_schedule_${kelas.replace(' ', '_')}`, schedule };
 };
@@ -987,25 +987,25 @@ document.getElementById('piket-save-btn').onclick = async () => {
     }
     const { key, schedule } = piketState.currentSchedule;
     try {
-        showToast('💾 Menyimpan jadwal', 'Mengirim ke server...', 30);
+        showToast('Menyimpan jadwal', 'Mengirim ke server...', 30);
         const result = await apiCall('saveConfig', { key, value: JSON.stringify(schedule) }, false);
         if (result.success) {
-            document.getElementById('piket-status').textContent = '✅ Full week schedule saved!';
+            document.getElementById('piket-status').textContent = 'Full week schedule saved!';
             document.getElementById('piket-status').className = 'status-msg success';
             document.getElementById('piket-save-btn').style.display = 'none';
-            updateToast('✅ Jadwal tersimpan', 'Berhasil!', 100);
+            updateToast('Jadwal tersimpan', 'Berhasil!', 100);
             setTimeout(() => hideToastDelayed(800), 500);
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         } else {
-            showToast('❌ Gagal simpan', result.error || 'Unknown error', null, true);
+            showToast('Gagal simpan', result.error || 'Unknown error', null, true);
             setTimeout(() => hideToastDelayed(2000), 1500);
-            document.getElementById('piket-status').textContent = '❌ Failed to save';
+            document.getElementById('piket-status').textContent = 'Failed to save';
             document.getElementById('piket-status').className = 'status-msg error';
         }
     } catch (error) {
-        showToast('❌ Error saving', 'Periksa koneksi', null, true);
+        showToast('Error saving', 'Periksa koneksi', null, true);
         setTimeout(() => hideToastDelayed(2000), 1500);
-        document.getElementById('piket-status').textContent = '❌ Error saving';
+        document.getElementById('piket-status').textContent = 'Error saving';
         document.getElementById('piket-status').className = 'status-msg error';
     }
 };
@@ -1059,7 +1059,7 @@ function setupEventListeners() {
     els.clearCacheBtn.addEventListener('click', () => {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
-            showToast('🗑️ Cache dibersihkan', 'Refresh halaman', null, false);
+            showToast('Cache dibersihkan', 'Refresh halaman', null, false);
             setTimeout(() => {
                 hideToast();
                 location.reload();

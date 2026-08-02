@@ -1,16 +1,16 @@
-# 🏫 School Management PWA
+# School Management PWA
 
 A progressive web app for managing school attendance and cleaning duties (piket), powered by Google Sheets.
 
-## ✨ Features
+## Features
 
-- ✅ Real-time attendance tracking
-- 🧹 Piket (cleaning duty) management
-- 📊 WhatsApp-ready reports
-- 📱 Offline support with background sync
-- 🔒 Secure API key management via GitHub Secrets
+- Real-time attendance tracking
+- Piket (cleaning duty) management
+- WhatsApp-ready reports
+- Offline support with background sync
+- Secure API key management via GitHub Secrets
 
-## 🚀 Deployment
+## Deployment
 
 ### Prerequisites
 

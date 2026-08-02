@@ -5,12 +5,12 @@ const path = require('path');
 // Read the secret from environment
 const APPS_SCRIPT_URL = process.env.APPS_SCRIPT_URL;
 if (!APPS_SCRIPT_URL) {
-    console.error('❌ APPS_SCRIPT_URL environment variable not set');
+    console.error('APPS_SCRIPT_URL environment variable not set');
     console.error('   Make sure it\'s set in GitHub Secrets or your .env file');
     process.exit(1);
 }
 
-console.log('🔨 Building with API URL:', APPS_SCRIPT_URL);
+console.log('Building with API URL:', APPS_SCRIPT_URL);
 
 // Ensure dist directory exists
 const distDir = path.join(__dirname, '..', 'dist');
@@ -43,8 +43,8 @@ for (const file of files) {
     content = content.replace(/\{\{APPS_SCRIPT_URL\}\}/g, APPS_SCRIPT_URL);
     
     fs.writeFileSync(destPath, content);
-    console.log(`✅ Built: ${file.dest}`);
+    console.log(`Built: ${file.dest}`);
 }
 
-console.log('🎉 Build complete!');
-console.log(`📁 Output directory: ${distDir}`);
+console.log('Build complete!');
+console.log(`Output directory: ${distDir}`);
