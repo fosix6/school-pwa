@@ -695,7 +695,6 @@ function renderPiketBuilderStudents() {
 }
 
 function showDayPicker(anchorEl, nis, student) {
-    // remove any existing picker
     document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
 
     const days = [
@@ -718,11 +717,18 @@ function showDayPicker(anchorEl, nis, student) {
         ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove">✕ Hapus</button>` : ''}
     `;
 
+    // Position relative to viewport, append to body so it's never clipped
+    const rect = anchorEl.getBoundingClientRect();
+    popup.style.position = 'fixed';
+    popup.style.top = `${rect.bottom + 4}px`;
+    popup.style.left = `${rect.left}px`;
+    popup.style.zIndex = '9999';
+
     popup.querySelectorAll('.day-picker-btn').forEach(btn => {
-        btn.onclick = (ev) => {
+        btn.addEventListener('click', (ev) => {
+            ev.preventDefault();
             ev.stopPropagation();
             const key = btn.dataset.key;
-            // remove from all days first
             ['monday','tuesday','wednesday','thursday','friday'].forEach(d => {
                 piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
             });
@@ -733,15 +739,14 @@ function showDayPicker(anchorEl, nis, student) {
             renderPiketBuilderStudents();
             updatePiketSelectedDisplay();
             document.getElementById('piket-save-btn').style.display = 'none';
-        };
+        });
     });
 
-    anchorEl.appendChild(popup);
+    document.body.appendChild(popup);
 
-    // close on outside click
     setTimeout(() => {
         document.addEventListener('click', function closePopup(ev) {
-            if (!popup.contains(ev.target)) {
+            if (!popup.contains(ev.target) && ev.target !== anchorEl) {
                 popup.remove();
                 document.removeEventListener('click', closePopup);
             }
