@@ -465,6 +465,7 @@ function getCachedData(kelas, date) {
 }
 
 // ===== RENDER STUDENTS =====
+// ===== RENDER STUDENTS =====
 function renderStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
@@ -483,17 +484,26 @@ function renderStudents() {
         // Check if in lateness list - this will also show 'telat' if the status is 'telat'
         const isLate = lateNIS.has(nis) || status === 'telat';
         
-        // Determine display status
-        const displayStatus = isLate ? 'telat' : status;
+        // Determine display status - use 'terlambat' for CSS class
+        const displayStatus = isLate ? 'terlambat' : status;
         
         const statusLabels = {
             hadir: { label: 'Hadir', emoji: 'H', class: 'status-hadir' },
             absen: { label: 'Absen', emoji: 'A', class: 'status-absen' },
             sakit: { label: 'Sakit', emoji: 'S', class: 'status-sakit' },
             izin: { label: 'Izin', emoji: 'I', class: 'status-izin' },
-            telat: { label: 'Telat', emoji: 'T', class: 'status-telat' }
+            terlambat: { label: 'Telat', emoji: 'T', class: 'status-terlambat' }
         };
         const info = statusLabels[displayStatus] || statusLabels.hadir;
+        
+        // For the status buttons, use 'telat' as the value but 'terlambat' for display
+        const statusOptions = [
+            { value: 'hadir', label: 'H', class: 'status-hadir' },
+            { value: 'absen', label: 'A', class: 'status-absen' },
+            { value: 'sakit', label: 'S', class: 'status-sakit' },
+            { value: 'izin', label: 'I', class: 'status-izin' },
+            { value: 'telat', label: 'T', class: 'status-terlambat' }
+        ];
         
         html += `
             <div class="student-card status-${displayStatus}">
@@ -505,15 +515,13 @@ function renderStudents() {
                     ${info.emoji} ${info.label}
                 </div>
                 <div class="status-btns">
-                    ${['hadir', 'absen', 'sakit', 'izin', 'telat'].map(s => {
-                        const label = { hadir: 'H', absen: 'A', sakit: 'S', izin: 'I', telat: 'T' }[s];
-                        const isActive = displayStatus === s;
-                        const statusClass = s === 'telat' ? 'status-telat' : `status-${s}`;
+                    ${statusOptions.map(s => {
+                        const isActive = displayStatus === s.value || (s.value === 'telat' && isLate);
                         return `
-                            <button class="status-btn ${isActive ? 'active' : ''} ${statusClass}" 
-                                    data-status="${s}" 
-                                    onclick="markAttendance('${nis}', '${s}')">
-                                ${label}
+                            <button class="status-btn ${isActive ? 'active' : ''} ${s.class}" 
+                                    data-status="${s.value}" 
+                                    onclick="markAttendance('${nis}', '${s.value}')">
+                                ${s.label}
                             </button>
                         `;
                     }).join('')}
@@ -525,6 +533,7 @@ function renderStudents() {
 }
 
 // ===== MARK ATTENDANCE =====
+// ===== MARK ATTENDANCE =====
 async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
@@ -532,7 +541,7 @@ async function markAttendance(nis, status) {
     // Update attendance
     state.attendance[nis] = status;
     
-    // Rebuild lateness from attendance
+    // Rebuild lateness from attendance - only include entries with status 'telat'
     state.lateness = [];
     for (const [sNis, sStatus] of Object.entries(state.attendance)) {
         if (sStatus === 'telat') {
