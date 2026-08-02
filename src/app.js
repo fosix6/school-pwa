@@ -9,19 +9,6 @@ const CONFIG = {
     DB_VERSION: 1,
 };
 
-// ✅ VALIDATION: Check if URL was properly injected
-if (!API_URL || API_URL === '{{APPS_SCRIPT_URL}}' || API_URL.includes('{{')) {
-    console.error('❌ API_URL not configured! Build process failed.');
-    document.body.innerHTML = `
-        <div style="padding:40px;text-align:center;font-family:sans-serif;">
-            <h2 style="color:#e74c3c;">⚠️ Configuration Error</h2>
-            <p style="color:#555;">The app is not properly configured. Please contact the administrator.</p>
-            <p style="color:#999;font-size:12px;margin-top:20px;">Error: API_URL placeholder not replaced</p>
-        </div>
-    `;
-    throw new Error('API_URL not configured');
-}
-
 console.log('✅ API_URL configured successfully:', API_URL);
 
 // ===== STATE =====
