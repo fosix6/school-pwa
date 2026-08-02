@@ -16,6 +16,7 @@ let state = {
     piket: [],
     pendingActions: [],
     isOnline: navigator.onLine,
+    currentTab: 'today',
 };
 
 // ===== DOM REFS =====
@@ -43,27 +44,16 @@ const els = {
     uploadCsvBtn: $('upload-csv-btn'),
     uploadStatus: $('upload-status'),
     clearCacheBtn: $('clear-cache-btn'),
+    loadingToast: $('loading-toast'),
+    toastMessage: $('toast-message'),
+    toastDetail: $('toast-detail'),
+    toastProgress: $('toast-progress'),
+    tabBtns: document.querySelectorAll('.tab-btn'),
 };
 
 // ========================================
 // PIKET SCHEDULE BUILDER (Admin Panel)
 // ========================================
-
-const piketEls = {
-    classSelector: document.getElementById('piket-class-selector'),
-    studentSearch: document.getElementById('piket-student-search'),
-    studentList: document.getElementById('piket-student-list'),
-    selectedList: document.getElementById('piket-selected-students'),
-    generateBtn: document.getElementById('piket-generate-btn'),
-    saveBtn: document.getElementById('piket-save-btn'),
-    clearBtn: document.getElementById('piket-clear-btn'),
-    status: document.getElementById('piket-status'),
-    monList: document.getElementById('piket-mon-list'),
-    tueList: document.getElementById('piket-tue-list'),
-    wedList: document.getElementById('piket-wed-list'),
-    thuList: document.getElementById('piket-thu-list'),
-    friList: document.getElementById('piket-fri-list'),
-};
 
 let piketState = {
     kelas: '',
@@ -74,7 +64,89 @@ let piketState = {
     thursday: [],
     friday: [],
     filteredStudents: [],
+    currentSchedule: null,
 };
+
+// ===== LOADING TOAST =====
+let toastTimeout = null;
+let toastActive = false;
+
+function showToast(message, detail = '', progress = null, isError = false) {
+    const toast = els.loadingToast;
+    const msgEl = els.toastMessage;
+    const detailEl = els.toastDetail;
+    const progressEl = els.toastProgress;
+    
+    // Clear any existing timeout
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+        toastTimeout = null;
+    }
+    
+    // Set content
+    msgEl.textContent = message || 'Loading...';
+    detailEl.textContent = detail || '';
+    
+    // Handle progress
+    if (progress !== null && progress >= 0 && progress <= 100) {
+        progressEl.style.display = 'block';
+        progressEl.value = progress;
+    } else {
+        progressEl.style.display = 'none';
+    }
+    
+    // Set error styling
+    if (isError) {
+        toast.classList.add('error');
+    } else {
+        toast.classList.remove('error');
+    }
+    
+    // Show toast
+    toast.classList.add('active');
+    toastActive = true;
+}
+
+function updateToast(message, detail = '', progress = null) {
+    if (!toastActive) {
+        showToast(message, detail, progress);
+        return;
+    }
+    
+    const msgEl = els.toastMessage;
+    const detailEl = els.toastDetail;
+    const progressEl = els.toastProgress;
+    
+    if (message) msgEl.textContent = message;
+    if (detail) detailEl.textContent = detail;
+    
+    if (progress !== null && progress >= 0 && progress <= 100) {
+        progressEl.style.display = 'block';
+        progressEl.value = progress;
+    } else {
+        progressEl.style.display = 'none';
+    }
+}
+
+function hideToast() {
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+        toastTimeout = null;
+    }
+    els.loadingToast.classList.remove('active');
+    toastActive = false;
+}
+
+function hideToastDelayed(delay = 800) {
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+        toastTimeout = null;
+    }
+    toastTimeout = setTimeout(() => {
+        hideToast();
+        toastTimeout = null;
+    }, delay);
+}
 
 // ===== HELPERS =====
 function todayISO() {
@@ -102,19 +174,64 @@ function escapeHtml(str) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
-// ===== API CALLS =====
-async function apiCall(action, params = {}) {
+// ===== API CALLS WITH TOAST =====
+async function apiCall(action, params = {}, showLoadingToast = true) {
     const url = new URL(CONFIG.API_URL);
     url.searchParams.append('action', action);
     Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+    
+    const actionLabels = {
+        'getClasses': 'Memuat daftar kelas',
+        'getStudents': 'Memuat data siswa',
+        'getAttendance': 'Memuat absensi',
+        'getPiket': 'Memuat jadwal piket',
+        'markAttendance': 'Menyimpan absensi',
+        'togglePiket': 'Mengupdate piket',
+        'uploadPiketPhoto': 'Mengupload foto',
+        'getHistory': 'Memuat history',
+        'uploadCSV': 'Mengupload CSV',
+        'saveConfig': 'Menyimpan konfigurasi',
+    };
+    
+    const label = actionLabels[action] || `Menjalankan ${action}`;
+    
+    if (showLoadingToast) {
+        showToast(label, 'Menghubungi server...', 10);
+    }
+    
     try {
+        updateToast(label, 'Mengirim request...', 30);
+        const startTime = Date.now();
+        
         const response = await fetch(url.toString());
+        
+        updateToast(label, 'Menerima response...', 70);
+        
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return await response.json();
+        
+        const data = await response.json();
+        
+        updateToast(label, 'Selesai!', 100);
+        
+        // Show success briefly then hide
+        setTimeout(() => {
+            hideToastDelayed(600);
+        }, 300);
+        
+        return data;
     } catch (error) {
         console.error('API Error:', error);
+        showToast(`❌ Gagal: ${label}`, error.message || 'Unknown error', null, true);
+        
         if (!navigator.onLine) {
             queueAction(action, params);
+            setTimeout(() => {
+                hideToastDelayed(1500);
+            }, 1000);
+        } else {
+            setTimeout(() => {
+                hideToastDelayed(2000);
+            }, 1500);
         }
         throw error;
     }
@@ -126,23 +243,39 @@ function queueAction(action, params) {
     pending.push({ action, params, timestamp: Date.now() });
     localStorage.setItem('pending_actions', JSON.stringify(pending));
     updatePendingCounter();
+    showToast('📤 Disimpan offline', 'Akan disinkronkan saat online', null, false);
+    setTimeout(() => hideToastDelayed(1500), 1000);
 }
 
 async function processPendingActions() {
     const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
     if (!pending.length || !navigator.onLine) return;
+    
+    showToast('🔄 Menyinkronkan data offline', `Memproses ${pending.length} item...`, 10);
+    
     const failed = [];
+    let processed = 0;
+    const total = pending.length;
+    
     for (const item of pending) {
         try {
-            await apiCall(item.action, item.params);
+            processed++;
+            const progress = Math.round((processed / total) * 90);
+            updateToast('🔄 Menyinkronkan data offline', `Item ${processed}/${total}`, progress);
+            await apiCall(item.action, item.params, false);
         } catch (error) {
             failed.push(item);
         }
     }
+    
     if (failed.length) {
         localStorage.setItem('pending_actions', JSON.stringify(failed));
+        updateToast('⚠️ Sinkronisasi sebagian', `${failed.length} item gagal`, 100);
+        setTimeout(() => hideToastDelayed(2000), 1500);
     } else {
         localStorage.removeItem('pending_actions');
+        updateToast('✅ Sinkronisasi selesai', 'Semua data tersimpan', 100);
+        setTimeout(() => hideToastDelayed(1200), 500);
     }
     updatePendingCounter();
 }
@@ -156,6 +289,22 @@ function updatePendingCounter() {
     } else if (el) {
         el.style.display = 'none';
     }
+}
+
+// ===== TAB SWITCHING =====
+function switchTab(tabName) {
+    // Update state
+    state.currentTab = tabName;
+    
+    // Update tab buttons
+    els.tabBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
+    
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.toggle('active', content.id === `tab-${tabName}`);
+    });
 }
 
 // ===== LOAD CLASSES =====
@@ -201,11 +350,15 @@ async function loadStudents(kelas, date) {
     }
     
     try {
+        showToast('📊 Memuat data kelas', `Kelas ${kelas} - ${formatDate(date)}`, 20);
+        
         const [studentData, attData, piketData] = await Promise.all([
-            apiCall('getStudents', { kelas }),
-            apiCall('getAttendance', { date, kelas }),
-            apiCall('getPiket', { date, kelas })
+            apiCall('getStudents', { kelas }, false),
+            apiCall('getAttendance', { date, kelas }, false),
+            apiCall('getPiket', { date, kelas }, false)
         ]);
+        
+        updateToast('📊 Memproses data', 'Menyusun tampilan...', 80);
         
         state.students = studentData.students || [];
         state.attendance = attData.attendance || {};
@@ -220,6 +373,9 @@ async function loadStudents(kelas, date) {
         els.statsSummary.style.display = 'grid';
         cacheData(kelas, date);
         
+        updateToast('✅ Data siap', `${state.students.length} siswa dimuat`, 100);
+        setTimeout(() => hideToastDelayed(600), 300);
+        
     } catch (error) {
         const cached = getCachedData(kelas, date);
         if (cached) {
@@ -232,6 +388,8 @@ async function loadStudents(kelas, date) {
             els.piketSection.style.display = 'block';
             els.whatsappBtn.style.display = 'block';
             els.statsSummary.style.display = 'grid';
+            showToast('📦 Data dari cache', 'Koneksi offline, menggunakan data tersimpan', null, false);
+            setTimeout(() => hideToastDelayed(2000), 1000);
         } else {
             els.studentList.innerHTML = '<p class="empty-state">❌ Gagal memuat data. Periksa koneksi.</p>';
         }
@@ -405,14 +563,19 @@ async function uploadPiketPhoto(id, photoNum) {
             const piketEl = document.getElementById(`piket-${id}`);
             if (piketEl) piketEl.style.opacity = '0.5';
             try {
-                const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 });
+                showToast('📷 Mengupload foto', 'Mengirim ke server...', 30);
+                const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false);
                 if (result.success) {
+                    updateToast('✅ Foto terupload', 'Berhasil!', 100);
+                    setTimeout(() => hideToastDelayed(800), 500);
                     await loadStudents(els.classSelector.value, els.dateSelector.value);
                 } else {
-                    alert('❌ Gagal upload foto: ' + (result.error || 'Unknown error'));
+                    showToast('❌ Gagal upload', result.error || 'Unknown error', null, true);
+                    setTimeout(() => hideToastDelayed(2000), 1500);
                 }
             } catch (error) {
-                alert('❌ Gagal upload foto. Periksa koneksi.');
+                showToast('❌ Gagal upload', 'Periksa koneksi', null, true);
+                setTimeout(() => hideToastDelayed(2000), 1500);
             } finally {
                 if (piketEl) piketEl.style.opacity = '1';
             }
@@ -475,7 +638,8 @@ function copyWhatsAppReport() {
     }
     
     navigator.clipboard.writeText(report).then(() => {
-        alert('✅ Laporan disalin! Tempelkan ke WhatsApp.');
+        showToast('✅ Laporan disalin', 'Tempelkan ke WhatsApp', null, false);
+        setTimeout(() => hideToastDelayed(1500), 1000);
     }).catch(() => {
         prompt('Salin teks ini:', report);
     });
@@ -485,12 +649,17 @@ function copyWhatsAppReport() {
 async function loadHistory() {
     const date = els.historyDate.value;
     if (!date) {
-        alert('Pilih tanggal terlebih dahulu');
+        showToast('⚠️ Pilih tanggal', 'Tanggal harus diisi', null, true);
+        setTimeout(() => hideToastDelayed(1500), 1000);
         return;
     }
     
     try {
-        const data = await apiCall('getHistory', { date });
+        showToast('📅 Memuat history', `Tanggal ${formatDate(date)}`, 20);
+        const data = await apiCall('getHistory', { date }, false);
+        
+        updateToast('📅 Memproses history', 'Menyusun data...', 70);
+        
         let html = `<h3>📅 Rekap ${formatDate(date)}</h3>`;
         
         if (data.attendance && data.attendance.length) {
@@ -526,6 +695,8 @@ async function loadHistory() {
         }
         
         els.historyContainer.innerHTML = html;
+        updateToast('✅ History dimuat', `${data.attendance?.length || 0} record ditemukan`, 100);
+        setTimeout(() => hideToastDelayed(800), 500);
     } catch (error) {
         els.historyContainer.innerHTML = '<p class="empty-state">❌ Gagal memuat history</p>';
     }
@@ -535,8 +706,8 @@ async function loadHistory() {
 async function uploadCSV() {
     const file = els.csvUpload.files[0];
     if (!file) {
-        els.uploadStatus.textContent = '⚠️ Pilih file CSV terlebih dahulu';
-        els.uploadStatus.className = 'status-msg error';
+        showToast('⚠️ Pilih file', 'File CSV diperlukan', null, true);
+        setTimeout(() => hideToastDelayed(1500), 1000);
         return;
     }
     
@@ -544,23 +715,21 @@ async function uploadCSV() {
     reader.onload = async (e) => {
         const csv = e.target.result;
         try {
-            els.uploadStatus.textContent = '📤 Mengupload...';
-            els.uploadStatus.className = 'status-msg';
-            
-            const result = await apiCall('uploadCSV', { csv: encodeURIComponent(csv) });
+            showToast('📤 Mengupload CSV', 'Mengirim ke server...', 30);
+            const result = await apiCall('uploadCSV', { csv: encodeURIComponent(csv) }, false);
             
             if (result.success) {
-                els.uploadStatus.textContent = `✅ ${result.message}`;
-                els.uploadStatus.className = 'status-msg success';
+                updateToast('✅ Upload berhasil', result.message || 'Data terimport', 100);
+                setTimeout(() => hideToastDelayed(1200), 500);
                 await loadClasses();
                 await loadStudents(els.classSelector.value, els.dateSelector.value);
             } else {
-                els.uploadStatus.textContent = `❌ ${result.message}`;
-                els.uploadStatus.className = 'status-msg error';
+                showToast('❌ Upload gagal', result.message || 'Unknown error', null, true);
+                setTimeout(() => hideToastDelayed(2000), 1500);
             }
         } catch (error) {
-            els.uploadStatus.textContent = '❌ Gagal upload. Periksa koneksi.';
-            els.uploadStatus.className = 'status-msg error';
+            showToast('❌ Upload gagal', 'Periksa koneksi', null, true);
+            setTimeout(() => hideToastDelayed(2000), 1500);
         }
     };
     reader.readAsText(file);
@@ -649,7 +818,8 @@ document.getElementById('piket-class-selector').addEventListener('change', async
         return;
     }
     try {
-        const data = await apiCall('getStudents', { kelas });
+        showToast('📋 Memuat siswa', `Kelas ${kelas}`, 20);
+        const data = await apiCall('getStudents', { kelas }, false);
         piketState.allStudents = data.students || [];
         piketState.monday = [];
         piketState.tuesday = [];
@@ -662,6 +832,8 @@ document.getElementById('piket-class-selector').addEventListener('change', async
         document.getElementById('piket-status').textContent = '';
         document.getElementById('piket-status').className = '';
         document.getElementById('piket-save-btn').style.display = 'none';
+        updateToast('✅ Siswa dimuat', `${piketState.allStudents.length} siswa`, 100);
+        setTimeout(() => hideToastDelayed(600), 300);
     } catch (error) {
         document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">❌ Gagal memuat siswa</p>';
     }
@@ -795,55 +967,6 @@ function findAssignedDay(nis) {
     return null;
 }
 
-function removeFromDay(nis, day) {
-    piketState[day] = piketState[day].filter(s => s[0].toString() !== nis);
-}
-
-document.querySelectorAll('.piket-day-btn').forEach(btn => {
-    btn.onclick = () => {
-        const day = btn.dataset.day;
-        const targetDay = btn.dataset.target;
-        const nis = btn.dataset.nis;
-        const student = piketState.allStudents.find(s => s[0].toString() === nis);
-        if (!student) return;
-        
-        ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].forEach(d => {
-            piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
-        });
-        
-        const dayMap = { 'Senin': 'monday', 'Selasa': 'tuesday', 'Rabu': 'wednesday', 'Kamis': 'thursday', 'Jumat': 'friday' };
-        const key = dayMap[day];
-        if (key) {
-            piketState[key].push(student);
-        }
-        
-        renderPiketBuilderStudents();
-        updatePiketSelectedDisplay();
-        document.getElementById('piket-save-btn').style.display = 'none';
-    };
-});
-
-function cycleStudentDay(nis) {
-    const student = piketState.allStudents.find(s => s[0].toString() === nis);
-    if (!student) return;
-    
-    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-    const currentDay = findAssignedDay(nis);
-    let nextIndex = 0;
-    if (currentDay) {
-        const idx = days.indexOf(currentDay);
-        nextIndex = (idx + 1) % days.length;
-    }
-    days.forEach(d => {
-        piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
-    });
-    piketState[days[nextIndex]].push(student);
-    
-    renderPiketBuilderStudents();
-    updatePiketSelectedDisplay();
-    document.getElementById('piket-save-btn').style.display = 'none';
-}
-
 document.getElementById('piket-generate-btn').onclick = () => {
     const kelas = document.getElementById('piket-class-selector').value;
     if (!kelas) {
@@ -877,17 +1000,24 @@ document.getElementById('piket-save-btn').onclick = async () => {
     }
     const { key, schedule } = piketState.currentSchedule;
     try {
-        const result = await apiCall('saveConfig', { key, value: JSON.stringify(schedule) });
+        showToast('💾 Menyimpan jadwal', 'Mengirim ke server...', 30);
+        const result = await apiCall('saveConfig', { key, value: JSON.stringify(schedule) }, false);
         if (result.success) {
             document.getElementById('piket-status').textContent = '✅ Full week schedule saved!';
             document.getElementById('piket-status').className = 'status-msg success';
             document.getElementById('piket-save-btn').style.display = 'none';
+            updateToast('✅ Jadwal tersimpan', 'Berhasil!', 100);
+            setTimeout(() => hideToastDelayed(800), 500);
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         } else {
+            showToast('❌ Gagal simpan', result.error || 'Unknown error', null, true);
+            setTimeout(() => hideToastDelayed(2000), 1500);
             document.getElementById('piket-status').textContent = '❌ Failed to save';
             document.getElementById('piket-status').className = 'status-msg error';
         }
     } catch (error) {
+        showToast('❌ Error saving', 'Periksa koneksi', null, true);
+        setTimeout(() => hideToastDelayed(2000), 1500);
         document.getElementById('piket-status').textContent = '❌ Error saving';
         document.getElementById('piket-status').className = 'status-msg error';
     }
@@ -914,6 +1044,14 @@ document.getElementById('piket-close-btn').onclick = () => {
 
 // ===== EVENT LISTENERS =====
 function setupEventListeners() {
+    // Tab switching
+    els.tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            switchTab(tab);
+        });
+    });
+    
     els.classSelector.addEventListener('change', async () => {
         state.currentClass = els.classSelector.value;
         await loadStudents(state.currentClass, els.dateSelector.value);
@@ -934,28 +1072,12 @@ function setupEventListeners() {
     els.clearCacheBtn.addEventListener('click', () => {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
-            alert('Cache dibersihkan!');
-            location.reload();
+            showToast('🗑️ Cache dibersihkan', 'Refresh halaman', null, false);
+            setTimeout(() => {
+                hideToast();
+                location.reload();
+            }, 1500);
         }
-    });
-    
-    document.querySelector('[data-tab="admin"]').addEventListener('click', () => {
-        setTimeout(() => {
-            const piketSelector = document.getElementById('piket-class-selector');
-            if (piketSelector && piketSelector.options.length <= 1) {
-                loadClasses().then(classes => {
-                    if (classes.length) {
-                        piketSelector.innerHTML = '<option value="">-- Select Class --</option>';
-                        classes.forEach(cls => {
-                            const opt = document.createElement('option');
-                            opt.value = cls;
-                            opt.textContent = cls;
-                            piketSelector.appendChild(opt);
-                        });
-                    }
-                });
-            }
-        }, 100);
     });
 }
 
@@ -990,6 +1112,9 @@ function registerSW() {
 document.addEventListener('DOMContentLoaded', async () => {
     els.dateSelector.value = state.currentDate;
     els.historyDate.value = state.currentDate;
+    
+    // Set default tab
+    switchTab('today');
     
     await loadClasses();
     setupEventListeners();

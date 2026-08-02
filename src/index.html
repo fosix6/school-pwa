@@ -54,7 +54,7 @@
     <main id="tab-history" class="tab-content">
         <div class="filter-bar">
             <input type="date" id="history-date">
-            <button id="history-load-btn">📊 Load</button>
+            <button id="history-load-btn" class="primary-btn">📊 Load</button>
         </div>
         <div id="history-container">
             <p class="empty-state">Pilih tanggal untuk melihat rekap</p>
@@ -86,13 +86,25 @@
         </div>
     </main>
 
+    <!-- Loading Toast -->
+    <div id="loading-toast" class="loading-toast">
+        <div class="toast-content">
+            <span id="toast-message">Loading...</span>
+            <span id="toast-detail" class="toast-detail"></span>
+            <progress id="toast-progress" class="toast-progress" value="0" max="100"></progress>
+        </div>
+    </div>
+
+    <!-- Offline Banner -->
     <div id="offline-banner" class="offline-banner" style="display:none;">
         ⚠️ Offline - Perubahan akan disimpan saat koneksi kembali
     </div>
 
+    <!-- Pending Updates Counter -->
     <div id="pending-counter" class="pending-badge" style="display:none;">📤 0 pending</div>
 </div>
 
+<!-- Piket Schedule Builder Dialog -->
 <dialog id="piketBuilderDialog">
     <form method="dialog" id="piketBuilderForm">
         <h2>🧹 Piket Schedule Builder</h2>
