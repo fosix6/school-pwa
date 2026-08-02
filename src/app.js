@@ -9,6 +9,19 @@ const CONFIG = {
     DB_VERSION: 1,
 };
 
+// ✅ VALIDATION: Check if URL was properly injected
+if (!API_URL || API_URL === '{{APPS_SCRIPT_URL}}' || API_URL.includes('{{')) {
+    console.error('❌ API_URL not configured! Build process failed.');
+    document.body.innerHTML = `
+        <div style="padding:40px;text-align:center;font-family:sans-serif;">
+            <h2 style="color:#e74c3c;">⚠️ Configuration Error</h2>
+            <p style="color:#555;">The app is not properly configured. Please contact the administrator.</p>
+            <p style="color:#999;font-size:12px;margin-top:20px;">Error: API_URL placeholder not replaced</p>
+        </div>
+    `;
+    throw new Error('API_URL not configured');
+}
+
 console.log('✅ API_URL configured successfully:', API_URL);
 
 // ===== STATE =====
@@ -258,7 +271,7 @@ async function markAttendance(nis, status) {
     }
 }
 
-// ===== RENDER PIKET =====
+// ===== RENDER PIKET (One row per class) =====
 function renderPiket() {
     if (!state.piket || !state.piket.length) {
         els.piketList.innerHTML = '<p class="empty-state">Tidak ada piket untuk hari ini</p>';
@@ -268,12 +281,35 @@ function renderPiket() {
     let html = '';
     state.piket.forEach(piket => {
         const done = piket.done || false;
+        const hasPhoto1 = piket.photo1 && piket.photo1.length > 0;
+        const hasPhoto2 = piket.photo2 && piket.photo2.length > 0;
+        const studentNames = piket.names ? piket.names.join(', ') : '';
+        
         html += `
-            <div class="piket-item">
-                <span>${piket.name} - ${piket.task}</span>
-                <button class="piket-toggle" onclick="togglePiket('${piket.id}', ${!done})">
-                    ${done ? '✅ Selesai' : '⬜ Belum'}
-                </button>
+            <div class="piket-item" id="piket-${piket.id}">
+                <div class="piket-info">
+                    <span class="piket-students"><strong>👥 ${studentNames}</strong></span>
+                    <span class="piket-status ${done ? 'task-done' : 'task-pending'}">
+                        ${done ? '✅ Selesai' : '⬜ Belum'}
+                    </span>
+                </div>
+                <div class="piket-actions">
+                    <button class="piket-toggle" onclick="togglePiket('${piket.id}', ${!done})">
+                        ${done ? '↩️ Batal' : '✅ Selesai'}
+                    </button>
+                    <button class="piket-photo-btn" onclick="uploadPiketPhoto('${piket.id}', 1)">
+                        📷 Foto 1 ${hasPhoto1 ? '✅' : ''}
+                    </button>
+                    <button class="piket-photo-btn" onclick="uploadPiketPhoto('${piket.id}', 2)">
+                        📷 Foto 2 ${hasPhoto2 ? '✅' : ''}
+                    </button>
+                </div>
+                ${(hasPhoto1 || hasPhoto2) ? `
+                    <div class="piket-photos">
+                        ${hasPhoto1 ? `<a href="${piket.photo1}" target="_blank">📸 Foto 1</a>` : ''}
+                        ${hasPhoto2 ? `<a href="${piket.photo2}" target="_blank">📸 Foto 2</a>` : ''}
+                    </div>
+                ` : ''}
             </div>
         `;
     });
@@ -283,16 +319,71 @@ function renderPiket() {
 // ===== TOGGLE PIKET =====
 async function togglePiket(id, done) {
     const date = els.dateSelector.value;
+    const kelas = els.classSelector.value;
     
     const piket = state.piket.find(p => p.id === id);
-    if (piket) piket.done = done;
-    renderPiket();
+    if (piket) {
+        piket.done = done;
+        renderPiket();
+    }
     
     try {
-        await apiCall('togglePiket', { id, done, date });
+        await apiCall('togglePiket', { id, done, date, kelas });
+        cacheData(kelas, date);
+        await loadStudents(kelas, date);
     } catch (error) {
-        queueAction('togglePiket', { id, done, date });
+        if (piket) {
+            piket.done = !done;
+            renderPiket();
+        }
+        queueAction('togglePiket', { id, done, date, kelas });
     }
+}
+
+// ===== UPLOAD PIKET PHOTO =====
+async function uploadPiketPhoto(id, photoNum) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = false;
+    
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        try {
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                const base64 = event.target.result;
+                
+                const piketEl = document.getElementById(`piket-${id}`);
+                if (piketEl) piketEl.style.opacity = '0.5';
+                
+                try {
+                    const result = await apiCall('uploadPiketPhoto', { 
+                        id, 
+                        photoNum, 
+                        photo: base64
+                    });
+                    
+                    if (result.success) {
+                        await loadStudents(els.classSelector.value, els.dateSelector.value);
+                    } else {
+                        alert('❌ Gagal upload foto: ' + (result.error || 'Unknown error'));
+                    }
+                } catch (error) {
+                    alert('❌ Gagal upload foto. Periksa koneksi.');
+                } finally {
+                    if (piketEl) piketEl.style.opacity = '1';
+                }
+            };
+            reader.readAsDataURL(file);
+        } catch (error) {
+            alert('❌ Gagal membaca file.');
+        }
+    };
+    
+    input.click();
 }
 
 // ===== UPDATE STATS =====
@@ -338,9 +429,18 @@ document.getElementById('whatsapp-btn')?.addEventListener('click', () => {
         }
     }
     
-    const piketDone = state.piket ? state.piket.filter(p => p.done).length : 0;
-    const piketTotal = state.piket ? state.piket.length : 0;
-    report += `🧹 Piket: ${piketDone}/${piketTotal} selesai\n`;
+    if (state.piket && state.piket.length) {
+        report += `\n🧹 *PIKET*:\n`;
+        state.piket.forEach(p => {
+            const status = p.done ? '✅ Selesai' : '⬜ Belum';
+            const photos = [];
+            if (p.photo1) photos.push('📸1');
+            if (p.photo2) photos.push('📸2');
+            const photoStatus = photos.length ? ` (${photos.join(' ')})` : '';
+            const names = p.names ? p.names.join(', ') : '';
+            report += `${names}: ${status}${photoStatus}\n`;
+        });
+    }
     
     navigator.clipboard.writeText(report).then(() => {
         alert('✅ Laporan disalin! Tempelkan ke WhatsApp.');
@@ -512,9 +612,12 @@ async function loadHistory() {
         if (data.piket && data.piket.length) {
             html += `<h4>🧹 Piket</h4>`;
             data.piket.forEach(p => {
+                const photos = [];
+                if (p.photo1) photos.push('📸1');
+                if (p.photo2) photos.push('📸2');
+                const photoStatus = photos.length ? ` (${photos.join(' ')})` : '';
                 html += `<div class="piket-item">
-                    <span>${p.name} - ${p.task}</span>
-                    <span>${p.done ? '✅ Selesai' : '⬜ Belum'}</span>
+                    <span>${p.names ? p.names.join(', ') : ''}: ${p.done ? '✅ Selesai' : '⬜ Belum'}${photoStatus}</span>
                 </div>`;
             });
         }
@@ -583,7 +686,6 @@ setInterval(() => {
 // PIKET SCHEDULE BUILDER (Admin Panel)
 // ========================================
 
-// ===== LOAD CLASSES FOR PIKET BUILDER =====
 async function loadPiketClasses() {
     try {
         const data = await apiCall('getClasses');
@@ -602,7 +704,6 @@ async function loadPiketClasses() {
     }
 }
 
-// ===== LOAD STUDENTS FOR PIKET BUILDER =====
 async function loadPiketStudents(kelas) {
     if (!kelas) {
         piketEls.studentList.innerHTML = '<p class="empty-state">Pilih kelas terlebih dahulu</p>';
@@ -620,16 +721,13 @@ async function loadPiketStudents(kelas) {
         
         renderPiketStudentList();
         renderPiketSelectedStudents();
-        
         await loadExistingSchedule(kelas);
-        
     } catch (error) {
         console.error('Failed to load students:', error);
         piketEls.studentList.innerHTML = '<p class="empty-state">❌ Gagal memuat siswa</p>';
     }
 }
 
-// ===== LOAD EXISTING SCHEDULE =====
 async function loadExistingSchedule(kelas) {
     try {
         const scheduleKey = `piket_schedule_${kelas.replace(' ', '_')}`;
@@ -652,7 +750,6 @@ async function loadExistingSchedule(kelas) {
     }
 }
 
-// ===== RENDER STUDENT LIST =====
 function renderPiketStudentList() {
     const searchTerm = piketEls.studentSearch.value.toLowerCase().trim();
     let filtered = piketState.allStudents;
@@ -680,7 +777,7 @@ function renderPiketStudentList() {
         const isSelected = selectedNIS.has(nis.toString());
         html += `
             <div class="student-search-item ${isSelected ? 'selected' : ''}" 
-                 onclick="togglePiketStudent('${nis}')">
+                 onclick="window.togglePiketStudent('${nis}')">
                 <span class="student-name">${name}</span>
                 <span class="student-nis">NIS: ${nis}</span>
             </div>
@@ -689,7 +786,6 @@ function renderPiketStudentList() {
     piketEls.studentList.innerHTML = html;
 }
 
-// ===== RENDER SELECTED STUDENTS =====
 function renderPiketSelectedStudents() {
     if (!piketState.selectedStudents.length) {
         piketEls.selectedList.innerHTML = '<p class="empty-state">Belum ada siswa terpilih</p>';
@@ -701,7 +797,7 @@ function renderPiketSelectedStudents() {
         const nis = student[0];
         const name = student[1];
         html += `
-            <span class="selected-student-tag" onclick="togglePiketStudent('${nis}')">
+            <span class="selected-student-tag" onclick="window.togglePiketStudent('${nis}')">
                 ${name} (${nis})
             </span>
         `;
@@ -710,7 +806,6 @@ function renderPiketSelectedStudents() {
     piketEls.dayLabel.textContent = getDayIndonesian(piketState.day);
 }
 
-// ===== TOGGLE STUDENT SELECTION =====
 function togglePiketStudent(nis) {
     const student = piketState.allStudents.find(s => s[0].toString() === nis.toString());
     if (!student) return;
@@ -728,7 +823,6 @@ function togglePiketStudent(nis) {
     piketEls.saveBtn.style.display = 'none';
 }
 
-// ===== GENERATE JSON SCHEDULE =====
 function generatePiketJSON() {
     const kelas = piketEls.classSelector.value;
     if (!kelas) {
@@ -773,7 +867,6 @@ function generatePiketJSON() {
     piketEls.status.className = 'status-msg success';
 }
 
-// ===== SAVE SCHEDULE TO CONFIG =====
 async function savePiketSchedule() {
     if (!piketState.currentSchedule) {
         piketEls.status.textContent = '⚠️ Generate JSON terlebih dahulu';
@@ -807,7 +900,6 @@ async function savePiketSchedule() {
             piketEls.status.textContent = `✅ Schedule saved for ${kelas} - ${getDayIndonesian(day)}!`;
             piketEls.status.className = 'status-msg success';
             piketEls.saveBtn.style.display = 'none';
-            
             piketEls.jsonPreview.textContent = JSON.stringify(existingSchedule, null, 2);
         } else {
             piketEls.status.textContent = `❌ Failed to save: ${result.error || 'Unknown error'}`;
@@ -820,7 +912,6 @@ async function savePiketSchedule() {
     }
 }
 
-// ===== CLEAR SELECTION =====
 function clearPiketSelection() {
     piketState.selectedStudents = [];
     piketState.currentSchedule = null;
@@ -832,7 +923,6 @@ function clearPiketSelection() {
     piketEls.status.className = '';
 }
 
-// ===== HELPER: Get Day in Indonesian =====
 function getDayIndonesian(day) {
     const map = {
         'Monday': 'Senin',
@@ -846,7 +936,6 @@ function getDayIndonesian(day) {
     return map[day] || day;
 }
 
-// ===== SETUP PIKET BUILDER EVENTS =====
 function setupPiketBuilder() {
     // Make toggle function global for onclick
     window.togglePiketStudent = togglePiketStudent;
