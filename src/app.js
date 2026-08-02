@@ -739,6 +739,10 @@ async function uploadCSV() {
 // PIKET SCHEDULE BUILDER (Full Week)
 // ========================================
 
+// ========================================
+// PIKET SCHEDULE BUILDER (Full Week)
+// ========================================
+
 async function openPiketBuilderDialog() {
     const dialog = document.getElementById('piketBuilderDialog');
     const classes = await loadClasses();
@@ -795,7 +799,8 @@ function updatePiketSelectedDisplay() {
             <span class="selected-student-tag" data-day="${day.label}" data-nis="${s[0]}">${escapeHtml(s[1])}</span>
         `).join('');
         container.querySelectorAll('.selected-student-tag').forEach(el => {
-            el.onclick = () => {
+            el.onclick = (e) => {
+                e.stopPropagation();
                 const nis = el.dataset.nis;
                 const dayLabel = el.dataset.day;
                 const dayMap = { 'Senin': 'monday', 'Selasa': 'tuesday', 'Rabu': 'wednesday', 'Kamis': 'thursday', 'Jumat': 'friday' };
@@ -863,13 +868,19 @@ function renderPiketBuilderStudents() {
         ...piketState.friday.map(s => s[0].toString()),
     ]);
     
-    list.innerHTML = filtered.map(s => `
-        <div class="student-search-item ${selectedNIS.has(s[0].toString()) ? 'selected' : ''}" data-nis="${s[0]}">
-            <span class="student-name">${escapeHtml(s[1])}</span>
-            <span class="student-nis">${s[0]}</span>
-            ${selectedNIS.has(s[0].toString()) ? ' ✅' : ''}
-        </div>
-    `).join('');
+    list.innerHTML = filtered.map(s => {
+        const isSelected = selectedNIS.has(s[0].toString());
+        const assignedDay = findAssignedDay(s[0].toString());
+        const dayLabels = { monday: 'Senin', tuesday: 'Selasa', wednesday: 'Rabu', thursday: 'Kamis', friday: 'Jumat' };
+        const dayLabel = assignedDay ? dayLabels[assignedDay] : '';
+        return `
+            <div class="student-search-item ${isSelected ? 'selected' : ''}" data-nis="${s[0]}">
+                <span class="student-name">${escapeHtml(s[1])}</span>
+                <span class="student-nis">${s[0]}</span>
+                ${isSelected ? ` <span class="assigned-day">📌 ${dayLabel}</span>` : ''}
+            </div>
+        `;
+    }).join('');
     
     list.querySelectorAll('.student-search-item').forEach(el => {
         el.addEventListener('click', (e) => {
@@ -883,6 +894,7 @@ function renderPiketBuilderStudents() {
 }
 
 function showDayPicker(anchorEl, nis, student) {
+    // Remove any existing popups
     document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
 
     const days = [
@@ -897,8 +909,8 @@ function showDayPicker(anchorEl, nis, student) {
     const popup = document.createElement('div');
     popup.className = 'day-picker-popup';
     popup.innerHTML = `
-        <div style="font-size:11px;color:var(--text-secondary);padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;">
-            Pilih hari untuk ${escapeHtml(student[1])}
+        <div style="font-size:11px;color:var(--text-secondary);padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600;">
+            📅 ${escapeHtml(student[1])}
         </div>
         ${days.map(d => `
             <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-key="${d.key}">
@@ -906,56 +918,86 @@ function showDayPicker(anchorEl, nis, student) {
             </button>
         `).join('')}
         ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove">✕ Hapus dari jadwal</button>` : ''}
+        <div style="font-size:10px;color:var(--text-secondary);padding:4px 8px;border-top:1px solid var(--border);margin-top:4px;text-align:center;">
+            Klik di luar untuk tutup
+        </div>
     `;
 
+    // Position the popup
     const rect = anchorEl.getBoundingClientRect();
+    const popupWidth = 160;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    
+    // Ensure popup stays within viewport
+    if (left + popupWidth > window.innerWidth - 10) {
+        left = window.innerWidth - popupWidth - 10;
+    }
+    if (left < 10) left = 10;
+    
+    if (top + 250 > window.innerHeight - 10) {
+        top = rect.top - 250 - 6;
+    }
+    if (top < 10) top = 10;
+
     popup.style.position = 'fixed';
-    popup.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 260)}px`;
-    popup.style.left = `${Math.min(rect.left, window.innerWidth - 160)}px`;
-    popup.style.zIndex = '9999';
+    popup.style.top = `${top}px`;
+    popup.style.left = `${left}px`;
+    popup.style.zIndex = '99999';
     popup.style.background = 'var(--surface)';
     popup.style.border = '1px solid var(--border)';
     popup.style.borderRadius = '8px';
-    popup.style.boxShadow = '0 4px 20px rgba(0,0,0,0.15)';
+    popup.style.boxShadow = '0 4px 24px rgba(0,0,0,0.2)';
     popup.style.padding = '6px';
-    popup.style.minWidth = '150px';
+    popup.style.minWidth = '140px';
+    popup.style.maxWidth = '180px';
 
+    // Handle button clicks
     popup.querySelectorAll('.day-picker-btn').forEach(btn => {
         btn.addEventListener('click', (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
             const key = btn.dataset.key;
+            
+            // Remove from all days
             ['monday','tuesday','wednesday','thursday','friday'].forEach(d => {
                 piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
             });
+            
             if (key !== 'remove') {
                 piketState[key].push(student);
             }
+            
+            // Remove popup
             popup.remove();
+            
+            // Re-render
             renderPiketBuilderStudents();
             updatePiketSelectedDisplay();
             document.getElementById('piket-save-btn').style.display = 'none';
         });
     });
 
-    document.body.appendChild(popup);
-
-    if (window._dayPickerCloseHandler) {
-        document.removeEventListener('click', window._dayPickerCloseHandler);
-        window._dayPickerCloseHandler = null;
-    }
-
-    window._dayPickerCloseHandler = function closePopup(ev) {
+    // Close popup when clicking outside
+    const closeHandler = (ev) => {
         if (!popup.contains(ev.target)) {
             popup.remove();
-            document.removeEventListener('click', window._dayPickerCloseHandler);
-            window._dayPickerCloseHandler = null;
+            document.removeEventListener('click', closeHandler);
+            document.removeEventListener('scroll', closeHandler);
         }
     };
 
+    // Add to body and setup close handlers
+    document.body.appendChild(popup);
+    
+    // Use a small delay before adding the click handler to prevent immediate closing
     setTimeout(() => {
-        document.addEventListener('click', window._dayPickerCloseHandler);
-    }, 0);
+        document.addEventListener('click', closeHandler);
+        document.addEventListener('scroll', closeHandler);
+    }, 50);
+
+    // Store reference to remove handlers if needed
+    popup._closeHandler = closeHandler;
 }
 
 function findAssignedDay(nis) {
@@ -1039,6 +1081,8 @@ document.getElementById('piket-clear-btn').onclick = () => {
 };
 
 document.getElementById('piket-close-btn').onclick = () => {
+    // Clean up any open popups
+    document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
     document.getElementById('piketBuilderDialog').close();
 };
 
