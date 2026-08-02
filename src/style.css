@@ -618,3 +618,30 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     background: #ffebee;
     color: #c62828;
 }
+.student-search-item { position: relative; }
+.day-picker-popup {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 120px;
+}
+.day-picker-btn {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+}
+.day-picker-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.day-picker-btn.remove { color: var(--danger); }
+.primary-btn { background: var(--accent); color: white; border-color: var(--accent); }
+.danger-btn { background: var(--danger); color: white; border-color: var(--danger); }

@@ -685,25 +685,68 @@ function renderPiketBuilderStudents() {
     `).join('');
     
     list.querySelectorAll('.student-search-item').forEach(el => {
-        el.onclick = () => {
+        el.onclick = (e) => {
             const nis = el.dataset.nis;
             const student = piketState.allStudents.find(s => s[0].toString() === nis);
             if (!student) return;
-            
-            // Check if already assigned to a day
-            const assignedDay = findAssignedDay(nis);
-            if (assignedDay) {
-                // Remove from current day
-                removeFromDay(nis, assignedDay);
-            } else {
-                // Add to Monday by default (first available)
-                piketState.monday.push(student);
+            showDayPicker(el, nis, student);
+        };
+    });
+}
+
+function showDayPicker(anchorEl, nis, student) {
+    // remove any existing picker
+    document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
+
+    const days = [
+        { key: 'monday', label: 'Senin' },
+        { key: 'tuesday', label: 'Selasa' },
+        { key: 'wednesday', label: 'Rabu' },
+        { key: 'thursday', label: 'Kamis' },
+        { key: 'friday', label: 'Jumat' },
+    ];
+    const assignedDay = findAssignedDay(nis);
+
+    const popup = document.createElement('div');
+    popup.className = 'day-picker-popup';
+    popup.innerHTML = `
+        ${days.map(d => `
+            <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-key="${d.key}">
+                ${d.label}
+            </button>
+        `).join('')}
+        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-key="remove">✕ Hapus</button>` : ''}
+    `;
+
+    popup.querySelectorAll('.day-picker-btn').forEach(btn => {
+        btn.onclick = (ev) => {
+            ev.stopPropagation();
+            const key = btn.dataset.key;
+            // remove from all days first
+            ['monday','tuesday','wednesday','thursday','friday'].forEach(d => {
+                piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
+            });
+            if (key !== 'remove') {
+                piketState[key].push(student);
             }
+            popup.remove();
             renderPiketBuilderStudents();
             updatePiketSelectedDisplay();
             document.getElementById('piket-save-btn').style.display = 'none';
         };
     });
+
+    anchorEl.appendChild(popup);
+
+    // close on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closePopup(ev) {
+            if (!popup.contains(ev.target)) {
+                popup.remove();
+                document.removeEventListener('click', closePopup);
+            }
+        });
+    }, 0);
 }
 
 function findAssignedDay(nis) {

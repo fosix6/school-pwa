@@ -67,26 +67,28 @@
 
     <!-- TAB 3: Admin -->
     <main id="tab-admin" class="tab-content">
-        <h3>🧹 Piket Schedule Builder</h3>
-        <p>Buat jadwal piket untuk seluruh minggu untuk satu kelas.</p>
-        <button class="primary-btn" onclick="openPiketBuilderDialog()">📋 Buka Piket Builder</button>
-        
-        <hr>
-        
-        <h3>📥 Import CSV</h3>
-        <p>Upload file CSV dengan kolom: NIS, Nama, Kelas, Jurusan</p>
-        <input type="file" id="csv-upload" accept=".csv">
-        <button id="upload-csv-btn" class="primary-btn">Upload ke Google Sheets</button>
-        <div id="upload-status" class="status-msg"></div>
-        
-        <hr>
-        
-        <h3>📊 Database Stats</h3>
-        <div id="db-stats">
-            <p>Total Siswa: <span id="total-students">-</span></p>
-            <p>Total Absensi: <span id="total-attendance">-</span></p>
+        <div class="card">
+            <h3>🧹 Piket Schedule Builder</h3>
+            <p>Buat jadwal piket untuk seluruh minggu untuk satu kelas.</p>
+            <button class="primary-btn" onclick="openPiketBuilderDialog()">📋 Buka Piket Builder</button>
         </div>
-        <button id="clear-cache-btn" class="danger-btn">🗑️ Clear Local Cache</button>
+
+        <div class="card">
+            <h3>📥 Import CSV</h3>
+            <p>Upload file CSV dengan kolom: NIS, Nama, Kelas, Jurusan</p>
+            <input type="file" id="csv-upload" accept=".csv">
+            <button id="upload-csv-btn" class="primary-btn">Upload ke Google Sheets</button>
+            <div id="upload-status" class="status-msg"></div>
+        </div>
+
+        <div class="card">
+            <h3>📊 Database Stats</h3>
+            <div id="db-stats">
+                <p>Total Siswa: <span id="total-students">-</span></p>
+                <p>Total Absensi: <span id="total-attendance">-</span></p>
+            </div>
+            <button id="clear-cache-btn" class="danger-btn">🗑️ Clear Local Cache</button>
+        </div>
     </main>
 
     <!-- Offline Banner -->
