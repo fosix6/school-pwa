@@ -9,6 +9,21 @@ const CONFIG = {
     DB_VERSION: 1,
 };
 
+// ✅ VALIDATION: Check if URL was properly injected
+if (!API_URL || API_URL === '{{APPS_SCRIPT_URL}}' || API_URL.includes('{{')) {
+    console.error('❌ API_URL not configured! Build process failed.');
+    document.body.innerHTML = `
+        <div style="padding:40px;text-align:center;font-family:sans-serif;">
+            <h2 style="color:#e74c3c;">⚠️ Configuration Error</h2>
+            <p style="color:#555;">The app is not properly configured. Please contact the administrator.</p>
+            <p style="color:#999;font-size:12px;margin-top:20px;">Error: API_URL placeholder not replaced</p>
+        </div>
+    `;
+    throw new Error('API_URL not configured');
+}
+
+console.log('✅ API_URL configured successfully:', API_URL);
+
 // ===== STATE =====
 let state = {
     currentClass: '',
@@ -49,20 +64,36 @@ const els = {
     clearCacheBtn: $('clear-cache-btn'),
 };
 
+// ========================================
+// PIKET SCHEDULE BUILDER (Admin Panel)
+// ========================================
+
+const piketEls = {
+    classSelector: document.getElementById('piket-class-selector'),
+    daySelector: document.getElementById('piket-day-selector'),
+    dayLabel: document.getElementById('piket-day-label'),
+    studentSearch: document.getElementById('piket-student-search'),
+    studentList: document.getElementById('piket-student-list'),
+    selectedList: document.getElementById('piket-selected-students'),
+    generateBtn: document.getElementById('piket-generate-btn'),
+    saveBtn: document.getElementById('piket-save-btn'),
+    clearBtn: document.getElementById('piket-clear-btn'),
+    jsonOutput: document.getElementById('piket-json-output'),
+    jsonPreview: document.getElementById('piket-json-preview'),
+    status: document.getElementById('piket-status'),
+};
+
+let piketState = {
+    kelas: '',
+    day: 'Monday',
+    allStudents: [],
+    selectedStudents: [],
+    filteredStudents: [],
+    currentSchedule: null,
+};
+
 // ===== INITIALIZATION =====
 document.addEventListener('DOMContentLoaded', async () => {
-    // Validate API URL was replaced
-    // if (API_URL === '{{APPS_SCRIPT_URL}}' || API_URL.includes('{{')) {
-    //     console.error('❌ API_URL not configured! Build process failed.');
-    //     document.body.innerHTML = `
-    //         <div style="padding:40px;text-align:center;color:red;">
-    //             <h2>⚠️ Configuration Error</h2>
-    //             <p>Please contact the administrator.</p>
-    //         </div>
-    //     `;
-    //     return;
-    // }
-    
     // Set today's date
     els.dateSelector.value = state.currentDate;
     els.historyDate.value = state.currentDate;
@@ -75,6 +106,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Setup event listeners
     setupEventListeners();
+    
+    // Setup piket builder
+    setupPiketBuilder();
     
     // Register service worker
     registerSW();
@@ -98,7 +132,6 @@ async function apiCall(action, params = {}) {
         return await response.json();
     } catch (error) {
         console.error('API Error:', error);
-        // Queue for later if offline
         if (!navigator.onLine) {
             queueAction(action, params);
         }
@@ -111,16 +144,18 @@ async function loadClasses() {
     try {
         const data = await apiCall('getClasses');
         els.classSelector.innerHTML = '<option value="">Pilih Kelas...</option>';
-        data.classes.forEach(cls => {
-            const opt = document.createElement('option');
-            opt.value = cls;
-            opt.textContent = cls;
-            els.classSelector.appendChild(opt);
-        });
-        // Cache classes
-        localStorage.setItem('classes_cache', JSON.stringify(data.classes));
+        if (data.classes && data.classes.length > 0) {
+            data.classes.forEach(cls => {
+                const opt = document.createElement('option');
+                opt.value = cls;
+                opt.textContent = cls;
+                els.classSelector.appendChild(opt);
+            });
+        } else {
+            els.classSelector.innerHTML = '<option value="">Tidak ada kelas</option>';
+        }
+        localStorage.setItem('classes_cache', JSON.stringify(data.classes || []));
     } catch (error) {
-        // Use cached classes if available
         const cached = localStorage.getItem('classes_cache');
         if (cached) {
             const classes = JSON.parse(cached);
@@ -131,6 +166,8 @@ async function loadClasses() {
                 opt.textContent = cls;
                 els.classSelector.appendChild(opt);
             });
+        } else {
+            els.classSelector.innerHTML = '<option value="">Gagal memuat kelas</option>';
         }
     }
 }
@@ -146,24 +183,18 @@ async function loadStudents(kelas, date) {
     }
     
     try {
-        // Fetch students
         const studentData = await apiCall('getStudents', { kelas });
-        state.students = studentData.students;
+        state.students = studentData.students || [];
         
-        // Fetch attendance for this date
         const attData = await apiCall('getAttendance', { date, kelas });
         state.attendance = attData.attendance || {};
         
-        // Fetch piket
-        const piketData = await apiCall('getPiket', { date });
+        const piketData = await apiCall('getPiket', { date, kelas });
         state.piket = piketData.piket || [];
         
-        // Render
         renderStudents();
         renderPiket();
         updateStats();
-        
-        // Cache
         cacheData(kelas, date);
         
         els.piketSection.style.display = 'block';
@@ -171,12 +202,11 @@ async function loadStudents(kelas, date) {
         els.statsSummary.style.display = 'grid';
         
     } catch (error) {
-        // Try to load from cache
         const cached = getCachedData(kelas, date);
         if (cached) {
-            state.students = cached.students;
-            state.attendance = cached.attendance;
-            state.piket = cached.piket;
+            state.students = cached.students || [];
+            state.attendance = cached.attendance || {};
+            state.piket = cached.piket || [];
             renderStudents();
             renderPiket();
             updateStats();
@@ -191,7 +221,7 @@ async function loadStudents(kelas, date) {
 
 // ===== RENDER STUDENTS =====
 function renderStudents() {
-    if (!state.students.length) {
+    if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
@@ -229,25 +259,21 @@ async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
     
-    // Update UI immediately (optimistic)
     state.attendance[nis] = status;
     renderStudents();
     updateStats();
     
-    // Send to server
     try {
         await apiCall('markAttendance', { nis, date, status, kelas });
-        // Update cache
         cacheData(kelas, date);
     } catch (error) {
-        // Queue for retry
         queueAction('markAttendance', { nis, date, status, kelas });
     }
 }
 
 // ===== RENDER PIKET =====
 function renderPiket() {
-    if (!state.piket.length) {
+    if (!state.piket || !state.piket.length) {
         els.piketList.innerHTML = '<p class="empty-state">Tidak ada piket untuk hari ini</p>';
         return;
     }
@@ -271,7 +297,6 @@ function renderPiket() {
 async function togglePiket(id, done) {
     const date = els.dateSelector.value;
     
-    // Optimistic update
     const piket = state.piket.find(p => p.id === id);
     if (piket) piket.done = done;
     renderPiket();
@@ -286,11 +311,13 @@ async function togglePiket(id, done) {
 // ===== UPDATE STATS =====
 function updateStats() {
     const stats = { hadir: 0, absen: 0, sakit: 0, izin: 0 };
-    state.students.forEach(student => {
-        const nis = student[0];
-        const status = state.attendance[nis] || 'hadir';
-        stats[status] = (stats[status] || 0) + 1;
-    });
+    if (state.students) {
+        state.students.forEach(student => {
+            const nis = student[0];
+            const status = state.attendance[nis] || 'hadir';
+            stats[status] = (stats[status] || 0) + 1;
+        });
+    }
     
     els.statHadir.textContent = stats.hadir;
     els.statAbsen.textContent = stats.absen;
@@ -315,29 +342,27 @@ document.getElementById('whatsapp-btn')?.addEventListener('click', () => {
     report += `📝 Izin: ${els.statIzin.textContent}\n`;
     report += `━━━━━━━━━━━━━━━━\n`;
     
-    // Add absent list
-    const absentStudents = state.students
-        .filter(s => state.attendance[s[0]] === 'absen')
-        .map(s => s[1]);
-    if (absentStudents.length) {
-        report += `❌ Absen: ${absentStudents.join(', ')}\n`;
+    if (state.students) {
+        const absentStudents = state.students
+            .filter(s => state.attendance[s[0]] === 'absen')
+            .map(s => s[1]);
+        if (absentStudents.length) {
+            report += `❌ Absen: ${absentStudents.join(', ')}\n`;
+        }
     }
     
-    // Add piket status
-    const piketDone = state.piket.filter(p => p.done).length;
-    const piketTotal = state.piket.length;
+    const piketDone = state.piket ? state.piket.filter(p => p.done).length : 0;
+    const piketTotal = state.piket ? state.piket.length : 0;
     report += `🧹 Piket: ${piketDone}/${piketTotal} selesai\n`;
     
-    // Copy to clipboard
     navigator.clipboard.writeText(report).then(() => {
         alert('✅ Laporan disalin! Tempelkan ke WhatsApp.');
     }).catch(() => {
-        // Fallback
         prompt('Salin teks ini:', report);
     });
 });
 
-// ===== QUEUE SYSTEM (Offline Support) =====
+// ===== QUEUE SYSTEM =====
 function queueAction(action, params) {
     const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
     pending.push({ action, params, timestamp: Date.now() });
@@ -394,7 +419,6 @@ function getCachedData(kelas, date) {
     if (!data) return null;
     
     const parsed = JSON.parse(data);
-    // Check if cache is still fresh (1 hour)
     if (Date.now() - parsed.timestamp > CONFIG.CACHE_DURATION) {
         return null;
     }
@@ -402,11 +426,9 @@ function getCachedData(kelas, date) {
 }
 
 function loadFromCache() {
-    // Load classes from cache
     const classesCache = localStorage.getItem('classes_cache');
     if (classesCache) {
         const classes = JSON.parse(classesCache);
-        // Populate dropdown if empty
         if (els.classSelector.options.length <= 1) {
             els.classSelector.innerHTML = '<option value="">Pilih Kelas...</option>';
             classes.forEach(cls => {
@@ -436,25 +458,21 @@ window.addEventListener('offline', updateOnlineStatus);
 
 // ===== EVENT LISTENERS =====
 function setupEventListeners() {
-    // Class selector change
     els.classSelector.addEventListener('change', async () => {
         state.currentClass = els.classSelector.value;
         await loadStudents(state.currentClass, els.dateSelector.value);
     });
     
-    // Date selector change
     els.dateSelector.addEventListener('change', async () => {
         state.currentDate = els.dateSelector.value;
         await loadStudents(els.classSelector.value, state.currentDate);
     });
     
-    // Refresh button
     els.refreshBtn.addEventListener('click', async () => {
         await loadStudents(els.classSelector.value, els.dateSelector.value);
-        await loadClasses(); // Refresh classes too
+        await loadClasses();
     });
     
-    // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -465,13 +483,9 @@ function setupEventListeners() {
         });
     });
     
-    // History load
     els.historyLoadBtn.addEventListener('click', loadHistory);
-    
-    // CSV Upload
     els.uploadCsvBtn.addEventListener('click', uploadCSV);
     
-    // Clear cache
     els.clearCacheBtn.addEventListener('click', () => {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
@@ -508,7 +522,6 @@ async function loadHistory() {
             html += `<p class="empty-state">Tidak ada data untuk tanggal ini</p>`;
         }
         
-        // Show piket for that date
         if (data.piket && data.piket.length) {
             html += `<h4>🧹 Piket</h4>`;
             data.piket.forEach(p => {
@@ -546,7 +559,6 @@ async function uploadCSV() {
             if (result.success) {
                 els.uploadStatus.textContent = `✅ ${result.message}`;
                 els.uploadStatus.className = 'status-msg success';
-                // Refresh data
                 await loadClasses();
                 await loadStudents(state.currentClass, els.dateSelector.value);
             } else {
@@ -574,9 +586,313 @@ function registerSW() {
 setInterval(() => {
     if (navigator.onLine) {
         processPendingActions();
-        // Refresh attendance data every 5 minutes
         if (els.classSelector.value) {
             loadStudents(els.classSelector.value, els.dateSelector.value);
         }
     }
-}, 300000); // 5 minutes
+}, 300000);
+
+// ========================================
+// PIKET SCHEDULE BUILDER (Admin Panel)
+// ========================================
+
+// ===== LOAD CLASSES FOR PIKET BUILDER =====
+async function loadPiketClasses() {
+    try {
+        const data = await apiCall('getClasses');
+        piketEls.classSelector.innerHTML = '<option value="">-- Pilih Kelas --</option>';
+        if (data.classes && data.classes.length > 0) {
+            data.classes.forEach(cls => {
+                const opt = document.createElement('option');
+                opt.value = cls;
+                opt.textContent = cls;
+                piketEls.classSelector.appendChild(opt);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load classes:', error);
+        piketEls.classSelector.innerHTML = '<option value="">Gagal memuat kelas</option>';
+    }
+}
+
+// ===== LOAD STUDENTS FOR PIKET BUILDER =====
+async function loadPiketStudents(kelas) {
+    if (!kelas) {
+        piketEls.studentList.innerHTML = '<p class="empty-state">Pilih kelas terlebih dahulu</p>';
+        piketEls.selectedList.innerHTML = '<p class="empty-state">Belum ada siswa terpilih</p>';
+        piketState.allStudents = [];
+        piketState.selectedStudents = [];
+        return;
+    }
+    
+    try {
+        const data = await apiCall('getStudents', { kelas });
+        piketState.allStudents = data.students || [];
+        piketState.selectedStudents = [];
+        piketState.filteredStudents = piketState.allStudents;
+        
+        renderPiketStudentList();
+        renderPiketSelectedStudents();
+        
+        await loadExistingSchedule(kelas);
+        
+    } catch (error) {
+        console.error('Failed to load students:', error);
+        piketEls.studentList.innerHTML = '<p class="empty-state">❌ Gagal memuat siswa</p>';
+    }
+}
+
+// ===== LOAD EXISTING SCHEDULE =====
+async function loadExistingSchedule(kelas) {
+    try {
+        const scheduleKey = `piket_schedule_${kelas.replace(' ', '_')}`;
+        const data = await apiCall('getConfig', { key: scheduleKey });
+        if (data && data.value) {
+            const schedule = JSON.parse(data.value);
+            const day = piketState.day;
+            if (schedule[day]) {
+                const nisList = schedule[day].split(',').map(n => n.trim());
+                const selected = piketState.allStudents.filter(s => nisList.includes(s[0].toString()));
+                piketState.selectedStudents = selected;
+                renderPiketSelectedStudents();
+                renderPiketStudentList();
+                piketEls.status.textContent = `✅ Loaded existing schedule for ${getDayIndonesian(day)}`;
+                piketEls.status.className = 'status-msg success';
+            }
+        }
+    } catch (error) {
+        console.log('No existing schedule found');
+    }
+}
+
+// ===== RENDER STUDENT LIST =====
+function renderPiketStudentList() {
+    const searchTerm = piketEls.studentSearch.value.toLowerCase().trim();
+    let filtered = piketState.allStudents;
+    
+    if (searchTerm) {
+        filtered = filtered.filter(s => 
+            s[1].toLowerCase().includes(searchTerm) || 
+            s[0].toString().includes(searchTerm)
+        );
+    }
+    
+    piketState.filteredStudents = filtered;
+    
+    if (!filtered.length) {
+        piketEls.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa yang cocok</p>';
+        return;
+    }
+    
+    const selectedNIS = new Set(piketState.selectedStudents.map(s => s[0].toString()));
+    
+    let html = '';
+    filtered.forEach(student => {
+        const nis = student[0];
+        const name = student[1];
+        const isSelected = selectedNIS.has(nis.toString());
+        html += `
+            <div class="student-search-item ${isSelected ? 'selected' : ''}" 
+                 onclick="togglePiketStudent('${nis}')">
+                <span class="student-name">${name}</span>
+                <span class="student-nis">NIS: ${nis}</span>
+            </div>
+        `;
+    });
+    piketEls.studentList.innerHTML = html;
+}
+
+// ===== RENDER SELECTED STUDENTS =====
+function renderPiketSelectedStudents() {
+    if (!piketState.selectedStudents.length) {
+        piketEls.selectedList.innerHTML = '<p class="empty-state">Belum ada siswa terpilih</p>';
+        return;
+    }
+    
+    let html = '';
+    piketState.selectedStudents.forEach(student => {
+        const nis = student[0];
+        const name = student[1];
+        html += `
+            <span class="selected-student-tag" onclick="togglePiketStudent('${nis}')">
+                ${name} (${nis})
+            </span>
+        `;
+    });
+    piketEls.selectedList.innerHTML = html;
+    piketEls.dayLabel.textContent = getDayIndonesian(piketState.day);
+}
+
+// ===== TOGGLE STUDENT SELECTION =====
+function togglePiketStudent(nis) {
+    const student = piketState.allStudents.find(s => s[0].toString() === nis.toString());
+    if (!student) return;
+    
+    const index = piketState.selectedStudents.findIndex(s => s[0].toString() === nis.toString());
+    if (index >= 0) {
+        piketState.selectedStudents.splice(index, 1);
+    } else {
+        piketState.selectedStudents.push(student);
+    }
+    
+    renderPiketStudentList();
+    renderPiketSelectedStudents();
+    piketEls.jsonOutput.style.display = 'none';
+    piketEls.saveBtn.style.display = 'none';
+}
+
+// ===== GENERATE JSON SCHEDULE =====
+function generatePiketJSON() {
+    const kelas = piketEls.classSelector.value;
+    if (!kelas) {
+        piketEls.status.textContent = '⚠️ Pilih kelas terlebih dahulu';
+        piketEls.status.className = 'status-msg error';
+        return;
+    }
+    
+    if (!piketState.selectedStudents.length) {
+        piketEls.status.textContent = '⚠️ Pilih minimal 1 siswa untuk piket';
+        piketEls.status.className = 'status-msg error';
+        return;
+    }
+    
+    const scheduleKey = `piket_schedule_${kelas.replace(' ', '_')}`;
+    const nisList = piketState.selectedStudents.map(s => s[0]).join(',');
+    
+    const fullSchedule = {
+        "Monday": "",
+        "Tuesday": "",
+        "Wednesday": "",
+        "Thursday": "",
+        "Friday": ""
+    };
+    
+    fullSchedule[piketState.day] = nisList;
+    
+    const jsonString = JSON.stringify(fullSchedule, null, 2);
+    
+    piketEls.jsonPreview.textContent = jsonString;
+    piketEls.jsonOutput.style.display = 'block';
+    piketEls.saveBtn.style.display = 'inline-block';
+    
+    piketState.currentSchedule = {
+        key: scheduleKey,
+        schedule: fullSchedule,
+        day: piketState.day,
+        nisList: nisList
+    };
+    
+    piketEls.status.textContent = `✅ JSON generated for ${kelas} - ${getDayIndonesian(piketState.day)}`;
+    piketEls.status.className = 'status-msg success';
+}
+
+// ===== SAVE SCHEDULE TO CONFIG =====
+async function savePiketSchedule() {
+    if (!piketState.currentSchedule) {
+        piketEls.status.textContent = '⚠️ Generate JSON terlebih dahulu';
+        piketEls.status.className = 'status-msg error';
+        return;
+    }
+    
+    const { key, day, nisList } = piketState.currentSchedule;
+    const kelas = piketEls.classSelector.value;
+    
+    try {
+        const existingData = await apiCall('getConfig', { key });
+        let existingSchedule = {};
+        
+        if (existingData && existingData.value) {
+            try {
+                existingSchedule = JSON.parse(existingData.value);
+            } catch (e) {
+                existingSchedule = {};
+            }
+        }
+        
+        existingSchedule[day] = nisList;
+        
+        const result = await apiCall('saveConfig', { 
+            key, 
+            value: JSON.stringify(existingSchedule) 
+        });
+        
+        if (result.success) {
+            piketEls.status.textContent = `✅ Schedule saved for ${kelas} - ${getDayIndonesian(day)}!`;
+            piketEls.status.className = 'status-msg success';
+            piketEls.saveBtn.style.display = 'none';
+            
+            piketEls.jsonPreview.textContent = JSON.stringify(existingSchedule, null, 2);
+        } else {
+            piketEls.status.textContent = `❌ Failed to save: ${result.error || 'Unknown error'}`;
+            piketEls.status.className = 'status-msg error';
+        }
+    } catch (error) {
+        console.error('Save error:', error);
+        piketEls.status.textContent = '❌ Gagal menyimpan schedule';
+        piketEls.status.className = 'status-msg error';
+    }
+}
+
+// ===== CLEAR SELECTION =====
+function clearPiketSelection() {
+    piketState.selectedStudents = [];
+    piketState.currentSchedule = null;
+    renderPiketStudentList();
+    renderPiketSelectedStudents();
+    piketEls.jsonOutput.style.display = 'none';
+    piketEls.saveBtn.style.display = 'none';
+    piketEls.status.textContent = '';
+    piketEls.status.className = '';
+}
+
+// ===== HELPER: Get Day in Indonesian =====
+function getDayIndonesian(day) {
+    const map = {
+        'Monday': 'Senin',
+        'Tuesday': 'Selasa',
+        'Wednesday': 'Rabu',
+        'Thursday': 'Kamis',
+        'Friday': 'Jumat',
+        'Saturday': 'Sabtu',
+        'Sunday': 'Minggu'
+    };
+    return map[day] || day;
+}
+
+// ===== SETUP PIKET BUILDER EVENTS =====
+function setupPiketBuilder() {
+    // Make toggle function global for onclick
+    window.togglePiketStudent = togglePiketStudent;
+    
+    // Load classes when admin tab is shown
+    document.querySelector('[data-tab="admin"]').addEventListener('click', () => {
+        if (piketEls.classSelector.options.length <= 1) {
+            loadPiketClasses();
+        }
+    });
+    
+    piketEls.classSelector.addEventListener('change', () => {
+        const kelas = piketEls.classSelector.value;
+        piketState.kelas = kelas;
+        piketEls.jsonOutput.style.display = 'none';
+        piketEls.saveBtn.style.display = 'none';
+        piketEls.status.textContent = '';
+        piketEls.status.className = '';
+        loadPiketStudents(kelas);
+    });
+    
+    piketEls.daySelector.addEventListener('change', () => {
+        piketState.day = piketEls.daySelector.value;
+        piketEls.dayLabel.textContent = getDayIndonesian(piketState.day);
+        piketEls.jsonOutput.style.display = 'none';
+        piketEls.saveBtn.style.display = 'none';
+        if (piketState.kelas) {
+            loadExistingSchedule(piketState.kelas);
+        }
+    });
+    
+    piketEls.studentSearch.addEventListener('input', renderPiketStudentList);
+    piketEls.generateBtn.addEventListener('click', generatePiketJSON);
+    piketEls.saveBtn.addEventListener('click', savePiketSchedule);
+    piketEls.clearBtn.addEventListener('click', clearPiketSelection);
+}

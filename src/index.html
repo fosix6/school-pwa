@@ -71,6 +71,63 @@
 
     <!-- TAB 3: Admin -->
     <main id="tab-admin" class="tab-content">
+        <h3>🧹 Create Piket Schedule</h3>
+        <p>Buat jadwal piket untuk setiap kelas dan hari.</p>
+        
+        <div class="admin-section">
+            <div class="form-group">
+                <label>Pilih Kelas:</label>
+                <select id="piket-class-selector">
+                    <option value="">-- Pilih Kelas --</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Pilih Hari:</label>
+                <select id="piket-day-selector">
+                    <option value="Monday">Senin</option>
+                    <option value="Tuesday">Selasa</option>
+                    <option value="Wednesday">Rabu</option>
+                    <option value="Thursday">Kamis</option>
+                    <option value="Friday">Jumat</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Cari Siswa:</label>
+                <input type="text" id="piket-student-search" placeholder="Ketik nama atau NIS..." />
+            </div>
+            
+            <div class="form-group">
+                <label>Siswa Terpilih untuk <span id="piket-day-label">Senin</span>:</label>
+                <div id="piket-selected-students" class="selected-students">
+                    <p class="empty-state">Belum ada siswa terpilih</p>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Semua Siswa di Kelas Ini:</label>
+                <div id="piket-student-list" class="student-search-list">
+                    <p class="empty-state">Pilih kelas terlebih dahulu</p>
+                </div>
+            </div>
+            
+            <div class="admin-actions">
+                <button id="piket-generate-btn" class="primary-btn">📋 Generate JSON Schedule</button>
+                <button id="piket-save-btn" class="success-btn" style="display:none;">💾 Save to Config</button>
+                <button id="piket-clear-btn" class="danger-btn">🗑️ Clear Selection</button>
+            </div>
+            
+            <div id="piket-json-output" class="json-output" style="display:none;">
+                <h4>Generated JSON:</h4>
+                <pre id="piket-json-preview"></pre>
+            </div>
+            
+            <div id="piket-status" class="status-msg"></div>
+        </div>
+        
+        <hr>
+        
         <h3>📥 Import CSV</h3>
         <p>Upload file CSV dengan kolom: NIS, Nama, Kelas, Jurusan</p>
         <input type="file" id="csv-upload" accept=".csv">
@@ -78,6 +135,7 @@
         <div id="upload-status" class="status-msg"></div>
         
         <hr>
+        
         <h3>📊 Database Stats</h3>
         <div id="db-stats">
             <p>Total Siswa: <span id="total-students">-</span></p>
