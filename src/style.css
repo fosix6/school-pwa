@@ -401,6 +401,7 @@ dialog {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    margin: 0;
 }
 dialog::backdrop {
     background: rgba(0,0,0,0.35);
@@ -498,6 +499,7 @@ dialog input:focus, dialog select:focus {
 .student-search-item.selected { background: var(--accent); color: white; }
 .student-search-item .student-nis { font-size: 11px; color: var(--text-secondary); }
 .student-search-item.selected .student-nis { color: rgba(255,255,255,0.7); }
+.student-search-item .assigned-day { font-size: 10px; opacity: 0.8; }
 
 .day-row {
     display: flex;
@@ -546,10 +548,8 @@ dialog input:focus, dialog select:focus {
 .selected-student-tag:hover { background: var(--danger); }
 
 /* ===== DAY PICKER POPUP ===== */
-
-/* ===== DAY PICKER POPUP ===== */
 .day-picker-popup {
-    z-index: 99999 !important;
+    z-index: 999999 !important;
     position: fixed !important;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -559,6 +559,7 @@ dialog input:focus, dialog select:focus {
     min-width: 140px;
     max-width: 180px;
 }
+
 .day-picker-btn {
     display: block;
     width: 100%;
@@ -568,7 +569,11 @@ dialog input:focus, dialog select:focus {
     border-radius: 6px;
     border: 1px solid transparent;
     background: transparent;
+    color: var(--text);
     cursor: pointer;
+    font-family: inherit;
+    margin: 1px 0;
+    transition: background 0.15s;
 }
 .day-picker-btn:hover { background: var(--bg); }
 .day-picker-btn.active {
@@ -576,8 +581,12 @@ dialog input:focus, dialog select:focus {
     color: white;
     border-color: var(--accent);
 }
-.day-picker-btn.remove { color: var(--danger); }
-.day-picker-btn.remove:hover { background: #ffebee; }
+.day-picker-btn.remove { 
+    color: var(--danger); 
+}
+.day-picker-btn.remove:hover { 
+    background: #ffebee; 
+}
 
 /* ===== LOADING TOAST ===== */
 .loading-toast {
@@ -590,17 +599,19 @@ dialog input:focus, dialog select:focus {
     border-radius: var(--radius);
     padding: 12px 18px;
     box-shadow: 0 4px 24px rgba(0,0,0,0.15);
-    z-index: 9999;
+    z-index: 999999 !important;
     min-width: 280px;
     max-width: 90vw;
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s ease;
+    pointer-events: none;
 }
 .loading-toast.active {
     opacity: 1;
     visibility: visible;
     transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
 }
 .loading-toast.error {
     border-color: var(--danger);
@@ -714,7 +725,7 @@ dialog input:focus, dialog select:focus {
     text-align: center;
     font-weight: 500;
     font-size: 14px;
-    z-index: 1000;
+    z-index: 10000;
 }
 
 .pending-badge {
@@ -727,7 +738,7 @@ dialog input:focus, dialog select:focus {
     border-radius: 20px;
     font-size: 12px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    z-index: 999;
+    z-index: 99998;
 }
 
 /* ===== MISC ===== */

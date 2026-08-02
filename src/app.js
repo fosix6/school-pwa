@@ -77,17 +77,14 @@ function showToast(message, detail = '', progress = null, isError = false) {
     const detailEl = els.toastDetail;
     const progressEl = els.toastProgress;
     
-    // Clear any existing timeout
     if (toastTimeout) {
         clearTimeout(toastTimeout);
         toastTimeout = null;
     }
     
-    // Set content
     msgEl.textContent = message || 'Loading...';
     detailEl.textContent = detail || '';
     
-    // Handle progress
     if (progress !== null && progress >= 0 && progress <= 100) {
         progressEl.style.display = 'block';
         progressEl.value = progress;
@@ -95,14 +92,13 @@ function showToast(message, detail = '', progress = null, isError = false) {
         progressEl.style.display = 'none';
     }
     
-    // Set error styling
     if (isError) {
         toast.classList.add('error');
     } else {
         toast.classList.remove('error');
     }
     
-    // Show toast
+    toast.style.zIndex = '999999';
     toast.classList.add('active');
     toastActive = true;
 }
@@ -213,7 +209,6 @@ async function apiCall(action, params = {}, showLoadingToast = true) {
         
         updateToast(label, 'Selesai!', 100);
         
-        // Show success briefly then hide
         setTimeout(() => {
             hideToastDelayed(600);
         }, 300);
@@ -293,15 +288,12 @@ function updatePendingCounter() {
 
 // ===== TAB SWITCHING =====
 function switchTab(tabName) {
-    // Update state
     state.currentTab = tabName;
     
-    // Update tab buttons
     els.tabBtns.forEach(btn => {
         btn.classList.toggle('active', btn.dataset.tab === tabName);
     });
     
-    // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.toggle('active', content.id === `tab-${tabName}`);
     });
@@ -739,10 +731,6 @@ async function uploadCSV() {
 // PIKET SCHEDULE BUILDER (Full Week)
 // ========================================
 
-// ========================================
-// PIKET SCHEDULE BUILDER (Full Week)
-// ========================================
-
 async function openPiketBuilderDialog() {
     const dialog = document.getElementById('piketBuilderDialog');
     const classes = await loadClasses();
@@ -894,7 +882,6 @@ function renderPiketBuilderStudents() {
 }
 
 function showDayPicker(anchorEl, nis, student) {
-    // Remove any existing popups
     document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
 
     const days = [
@@ -908,17 +895,20 @@ function showDayPicker(anchorEl, nis, student) {
 
     const popup = document.createElement('div');
     popup.className = 'day-picker-popup';
-    popup.style.cssText = `
-        position: fixed !important;
-        z-index: 99999 !important;
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.25);
-        padding: 6px;
-        min-width: 140px;
-        max-width: 180px;
-    `;
+    
+    Object.assign(popup.style, {
+        position: 'fixed',
+        zIndex: '999999',
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '8px',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+        padding: '6px',
+        minWidth: '140px',
+        maxWidth: '180px',
+        top: '0px',
+        left: '0px'
+    });
     
     popup.innerHTML = `
         <div style="font-size:11px;color:var(--text-secondary);padding:4px 8px;border-bottom:1px solid var(--border);margin-bottom:4px;font-weight:600;">
@@ -938,6 +928,7 @@ function showDayPicker(anchorEl, nis, student) {
                 cursor: pointer;
                 font-family: inherit;
                 margin: 1px 0;
+                transition: background 0.15s;
             ">
                 ${d.label} ${assignedDay === d.key ? '✓' : ''}
             </button>
@@ -961,13 +952,11 @@ function showDayPicker(anchorEl, nis, student) {
         </div>
     `;
 
-    // Position the popup
     const rect = anchorEl.getBoundingClientRect();
     const popupWidth = 160;
     let left = rect.left;
     let top = rect.bottom + 6;
     
-    // Ensure popup stays within viewport
     if (left + popupWidth > window.innerWidth - 10) {
         left = window.innerWidth - popupWidth - 10;
     }
@@ -978,17 +967,15 @@ function showDayPicker(anchorEl, nis, student) {
     }
     if (top < 10) top = 10;
 
-    popup.style.top = `${top}px`;
-    popup.style.left = `${left}px`;
+    popup.style.top = top + 'px';
+    popup.style.left = left + 'px';
 
-    // Handle button clicks
     popup.querySelectorAll('.day-picker-btn').forEach(btn => {
         btn.addEventListener('click', (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
             const key = btn.dataset.key;
             
-            // Remove from all days
             ['monday','tuesday','wednesday','thursday','friday'].forEach(d => {
                 piketState[d] = piketState[d].filter(s => s[0].toString() !== nis);
             });
@@ -997,17 +984,13 @@ function showDayPicker(anchorEl, nis, student) {
                 piketState[key].push(student);
             }
             
-            // Remove popup
             popup.remove();
-            
-            // Re-render
             renderPiketBuilderStudents();
             updatePiketSelectedDisplay();
             document.getElementById('piket-save-btn').style.display = 'none';
         });
     });
 
-    // Close popup when clicking outside
     const closeHandler = (ev) => {
         if (!popup.contains(ev.target)) {
             popup.remove();
@@ -1016,17 +999,12 @@ function showDayPicker(anchorEl, nis, student) {
         }
     };
 
-    // Add to body and setup close handlers
     document.body.appendChild(popup);
     
-    // Use a small delay before adding the click handler to prevent immediate closing
     setTimeout(() => {
         document.addEventListener('click', closeHandler);
         document.addEventListener('scroll', closeHandler);
     }, 50);
-
-    // Store reference to remove handlers if needed
-    popup._closeHandler = closeHandler;
 }
 
 function findAssignedDay(nis) {
@@ -1110,14 +1088,12 @@ document.getElementById('piket-clear-btn').onclick = () => {
 };
 
 document.getElementById('piket-close-btn').onclick = () => {
-    // Clean up any open popups
     document.querySelectorAll('.day-picker-popup').forEach(p => p.remove());
     document.getElementById('piketBuilderDialog').close();
 };
 
 // ===== EVENT LISTENERS =====
 function setupEventListeners() {
-    // Tab switching
     els.tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.tab;
@@ -1186,7 +1162,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     els.dateSelector.value = state.currentDate;
     els.historyDate.value = state.currentDate;
     
-    // Set default tab
     switchTab('today');
     
     await loadClasses();
