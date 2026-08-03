@@ -14,7 +14,7 @@ let state = {
     students: [],
     attendance: {},
     piket: [],
-    lateness: [], // Added for lateness tracking
+    lateness: [],
     pendingActions: [],
     isOnline: navigator.onLine,
     currentTab: 'today',
@@ -33,7 +33,7 @@ const els = {
     statAbsen: $('stat-absen'),
     statSakit: $('stat-sakit'),
     statIzin: $('stat-izin'),
-    statTerlambat: $('stat-terlambat'), // Added
+    statTerlambat: $('stat-terlambat'),
     whatsappBtn: $('whatsapp-btn'),
     connectionStatus: $('connection-status'),
     offlineBanner: $('offline-banner'),
@@ -51,13 +51,15 @@ const els = {
     toastDetail: $('toast-detail'),
     toastProgress: $('toast-progress'),
     tabBtns: document.querySelectorAll('.tab-btn'),
-    // Lateness elements
     latenessSection: $('lateness-section'),
     latenessList: $('lateness-list'),
     markLateBtn: $('mark-late-btn'),
     lateStudentSelect: $('late-student-select'),
     latenessCount: $('lateness-count'),
 };
+
+// ===== API CACHE =====
+const apiCache = new Map();
 
 // ========================================
 // PIKET SCHEDULE BUILDER (Admin Panel)
@@ -179,7 +181,7 @@ function escapeHtml(str) {
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 async function apiCall(action, params = {}, showLoadingToast = true, method = 'GET') {
-        const actionLabels = {
+    const actionLabels = {
         'getClasses': 'Memuat daftar kelas',
         'getStudents': 'Memuat data siswa',
         'getAttendance': 'Memuat absensi',
@@ -190,13 +192,24 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         'getHistory': 'Memuat history',
         'uploadCSV': 'Mengupload CSV',
         'saveConfig': 'Menyimpan konfigurasi',
+        'markLateness': 'Mencatat keterlambatan',
     };
+    
     const label = actionLabels[action] || `Menjalankan ${action}`;
+    
+    // Check cache for GET requests
+    const cacheKey = `${action}_${JSON.stringify(params)}`;
+    if (method === 'GET' && apiCache.has(cacheKey)) {
+        const cached = apiCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < 5000) { // 5 second cache
+            return cached.data;
+        }
+    }
 
     if (showLoadingToast) showToast(label, 'Menghubungi server...', 10);
 
     try {
-        updateToast(label, 'Mengirim request...', 30);
+        if (showLoadingToast) updateToast(label, 'Mengirim request...', 30);
         let response;
 
         if (method === 'POST') {
@@ -212,20 +225,34 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
             response = await fetch(url.toString());
         }
 
-        updateToast(label, 'Menerima response...', 70);
+        if (showLoadingToast) updateToast(label, 'Menerima response...', 70);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        updateToast(label, 'Selesai!', 100);
-        setTimeout(() => hideToastDelayed(600), 300);
+        
+        // Cache the result for GET requests
+        if (method === 'GET') {
+            apiCache.set(cacheKey, {
+                data: data,
+                timestamp: Date.now()
+            });
+        }
+        
+        if (showLoadingToast) {
+            updateToast(label, 'Selesai!', 100);
+            // Only hide toast after a brief moment for UX
+            setTimeout(() => hideToastDelayed(300), 200);
+        }
         return data;
     } catch (error) {
         console.error('API Error:', error);
-        showToast(`Gagal: ${label}`, error.message || 'Unknown error', null, true);
-        if (!navigator.onLine) {
-            queueAction(action, params);
-            setTimeout(() => hideToastDelayed(1500), 1000);
-        } else {
-            setTimeout(() => hideToastDelayed(2000), 1500);
+        if (showLoadingToast) {
+            showToast(`Gagal: ${label}`, error.message || 'Unknown error', null, true);
+            if (!navigator.onLine) {
+                queueAction(action, params);
+                setTimeout(() => hideToastDelayed(1500), 1000);
+            } else {
+                setTimeout(() => hideToastDelayed(2000), 1500);
+            }
         }
         throw error;
     }
@@ -301,7 +328,7 @@ function switchTab(tabName) {
 // ===== LOAD CLASSES =====
 async function loadClasses() {
     try {
-        const data = await apiCall('getClasses');
+        const data = await apiCall('getClasses', {}, true);
         els.classSelector.innerHTML = '<option value="">Pilih Kelas...</option>';
         if (data.classes && data.classes.length > 0) {
             data.classes.forEach(cls => {
@@ -330,8 +357,7 @@ async function loadClasses() {
     }
 }
 
-// ===== LOAD STUDENTS =====
-// ===== LOAD STUDENTS =====
+// ===== LOAD STUDENTS - OPTIMIZED =====
 async function loadStudents(kelas, date) {
     if (!kelas) {
         els.studentList.innerHTML = '<p class="empty-state">Pilih kelas untuk mulai</p>';
@@ -342,22 +368,27 @@ async function loadStudents(kelas, date) {
         return;
     }
     
+    // Show loading state immediately
+    els.studentList.innerHTML = `
+        <div class="loading-state" style="text-align:center;padding:40px;">
+            <div style="display:inline-block;width:40px;height:40px;border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;animation:spin 1s linear infinite;"></div>
+            <p style="margin-top:10px;color:#666;">Memuat data kelas ${kelas}...</p>
+        </div>
+    `;
+    
     try {
-        showToast('Memuat data kelas', `Kelas ${kelas} - ${formatDate(date)}`, 20);
-        
         const [studentData, attData, piketData] = await Promise.all([
             apiCall('getStudents', { kelas }, false),
             apiCall('getAttendance', { date, kelas }, false),
             apiCall('getPiket', { date, kelas }, false)
         ]);
         
-        updateToast('Memproses data', 'Menyusun tampilan...', 80);
-        
+        // Update state immediately
         state.students = studentData.students || [];
         state.attendance = attData.attendance || {};
         state.piket = piketData.piket || [];
         
-        // FIX: Build lateness from attendance data where status is 'telat'
+        // Build lateness from attendance data
         state.lateness = [];
         for (const [nis, status] of Object.entries(state.attendance)) {
             if (status === 'telat') {
@@ -373,29 +404,33 @@ async function loadStudents(kelas, date) {
             }
         }
         
+        // Render everything immediately
         renderStudents();
         renderPiket();
         renderLateness();
         updateStats();
         updateLatenessSelect();
         
+        // Show sections
         els.piketSection.style.display = 'block';
         els.latenessSection.style.display = 'block';
         els.whatsappBtn.style.display = 'block';
         els.statsSummary.style.display = 'grid';
+        
+        // Cache data
         cacheData(kelas, date);
         
-        updateToast('Data siap', `${state.students.length} siswa dimuat`, 100);
-        setTimeout(() => hideToastDelayed(600), 300);
+        // Hide toast immediately if it was showing
+        if (toastActive) hideToast();
         
     } catch (error) {
+        // Try cached data
         const cached = getCachedData(kelas, date);
         if (cached) {
             state.students = cached.students || [];
             state.attendance = cached.attendance || {};
             state.piket = cached.piket || [];
             
-            // FIX: Build lateness from cached attendance data
             state.lateness = [];
             for (const [nis, status] of Object.entries(state.attendance)) {
                 if (status === 'telat') {
@@ -420,17 +455,18 @@ async function loadStudents(kelas, date) {
             els.latenessSection.style.display = 'block';
             els.whatsappBtn.style.display = 'block';
             els.statsSummary.style.display = 'grid';
+            
             showToast('Data dari cache', 'Koneksi offline, menggunakan data tersimpan', null, false);
-            setTimeout(() => hideToastDelayed(2000), 1000);
+            setTimeout(() => hideToastDelayed(1500), 1000);
         } else {
             els.studentList.innerHTML = '<p class="empty-state">Gagal memuat data. Periksa koneksi.</p>';
+            if (toastActive) hideToast();
         }
     }
 }
 
 // ===== CACHE =====
 function cacheData(kelas, date) {
-    // Rebuild lateness from attendance before caching
     state.lateness = [];
     for (const [nis, status] of Object.entries(state.attendance)) {
         if (status === 'telat') {
@@ -464,27 +500,21 @@ function getCachedData(kelas, date) {
     return parsed;
 }
 
-// ===== RENDER STUDENTS =====
-// ===== RENDER STUDENTS =====
+// ===== RENDER STUDENTS - OPTIMIZED WITH DOCUMENT FRAGMENT =====
 function renderStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
     
-    // Build lateness NIS set from state.lateness
+    const fragment = document.createDocumentFragment();
     const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
     
-    let html = '';
     state.students.forEach(student => {
         const nis = student[0].toString();
         const name = student[1];
-        // Get status from attendance
         const status = state.attendance[nis] || 'hadir';
-        // Check if in lateness list - this will also show 'telat' if the status is 'telat'
         const isLate = lateNIS.has(nis) || status === 'telat';
-        
-        // Determine display status - use 'terlambat' for CSS class
         const displayStatus = isLate ? 'terlambat' : status;
         
         const statusLabels = {
@@ -496,7 +526,6 @@ function renderStudents() {
         };
         const info = statusLabels[displayStatus] || statusLabels.hadir;
         
-        // For the status buttons, use 'telat' as the value but 'terlambat' for display
         const statusOptions = [
             { value: 'hadir', label: 'H', class: 'status-hadir' },
             { value: 'absen', label: 'A', class: 'status-absen' },
@@ -505,43 +534,48 @@ function renderStudents() {
             { value: 'telat', label: 'T', class: 'status-terlambat' }
         ];
         
-        html += `
-            <div class="student-card status-${displayStatus}">
-                <div class="student-info">
-                    <span class="student-name">${escapeHtml(name)}</span>
-                    <span class="student-nis">#${nis}</span>
-                </div>
-                <div class="student-status-badge ${info.class}">
-                    ${info.emoji} ${info.label}
-                </div>
-                <div class="status-btns">
-                    ${statusOptions.map(s => {
-                        const isActive = displayStatus === s.value || (s.value === 'telat' && isLate);
-                        return `
-                            <button class="status-btn ${isActive ? 'active' : ''} ${s.class}" 
-                                    data-status="${s.value}" 
-                                    onclick="markAttendance('${nis}', '${s.value}')">
-                                ${s.label}
-                            </button>
-                        `;
-                    }).join('')}
-                </div>
+        const card = document.createElement('div');
+        card.className = `student-card status-${displayStatus}`;
+        
+        let btnsHtml = statusOptions.map(s => {
+            const isActive = displayStatus === s.value || (s.value === 'telat' && isLate);
+            return `<button class="status-btn ${isActive ? 'active' : ''} ${s.class}" 
+                    data-status="${s.value}" 
+                    onclick="markAttendance('${nis}', '${s.value}')">
+                ${s.label}
+            </button>`;
+        }).join('');
+        
+        card.innerHTML = `
+            <div class="student-info">
+                <span class="student-name">${escapeHtml(name)}</span>
+                <span class="student-nis">#${nis}</span>
+            </div>
+            <div class="student-status-badge ${info.class}">
+                ${info.emoji} ${info.label}
+            </div>
+            <div class="status-btns">
+                ${btnsHtml}
             </div>
         `;
+        
+        fragment.appendChild(card);
     });
-    els.studentList.innerHTML = html;
+    
+    // Replace content in one operation
+    els.studentList.innerHTML = '';
+    els.studentList.appendChild(fragment);
 }
 
-// ===== MARK ATTENDANCE =====
 // ===== MARK ATTENDANCE =====
 async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
     
-    // Update attendance
+    // Update attendance immediately
     state.attendance[nis] = status;
     
-    // Rebuild lateness from attendance - only include entries with status 'telat'
+    // Rebuild lateness
     state.lateness = [];
     for (const [sNis, sStatus] of Object.entries(state.attendance)) {
         if (sStatus === 'telat') {
@@ -557,13 +591,15 @@ async function markAttendance(nis, status) {
         }
     }
     
+    // Update UI immediately
     renderStudents();
     renderLateness();
     updateStats();
     updateLatenessSelect();
     
+    // Send to server
     try {
-        await apiCall('markAttendance', { nis, date, status, kelas });
+        await apiCall('markAttendance', { nis, date, status, kelas }, true);
         cacheData(kelas, date);
     } catch (error) {
         queueAction('markAttendance', { nis, date, status, kelas });
@@ -575,7 +611,6 @@ function updateLatenessSelect() {
     const select = els.lateStudentSelect;
     select.innerHTML = '<option value="">Pilih siswa...</option>';
     
-    // Get students who aren't already marked late today
     const lateNIS = new Set(state.lateness.map(l => l.nis));
     
     state.students.forEach(student => {
@@ -598,10 +633,7 @@ async function markLateness() {
         return;
     }
     
-    // Just call markAttendance with 'telat' status
     await markAttendance(nis, 'telat');
-    
-    // Reset the select dropdown
     select.value = '';
     updateLatenessSelect();
 }
@@ -612,19 +644,16 @@ async function toggleLateness(nis) {
     const lateNIS = new Set(state.lateness.map(l => l.nis));
     
     if (lateNIS.has(nis.toString())) {
-        // Remove lateness (not supported by API yet - would need delete endpoint)
-        // For now, just show a message
         showToast('⚠️ Hapus tidak didukung', 'Gunakan tombol di panel keterlambatan', null, true);
         setTimeout(() => hideToastDelayed(1500), 1000);
         return;
     }
     
-    // Mark as late
     const student = state.students.find(s => s[0].toString() === nis);
     const name = student ? student[1] : nis;
     
     try {
-        await apiCall('markLateness', { nis, date }, false, 'POST');
+        await apiCall('markLateness', { nis, date }, true, 'POST');
         state.lateness.push({
             nis: nis.toString(),
             name: name,
@@ -660,21 +689,24 @@ function renderLateness() {
     
     els.latenessCount.textContent = state.lateness.length;
     
-    let html = '';
+    const fragment = document.createDocumentFragment();
+    
     state.lateness.forEach((item, index) => {
         const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '';
-        html += `
-            <div class="lateness-item">
-                <span class="lateness-name">${escapeHtml(item.name)}</span>
-                <span class="lateness-time">${time}</span>
-                <button class="lateness-remove-btn" onclick="removeLateness(${index})">✕</button>
-            </div>
+        const div = document.createElement('div');
+        div.className = 'lateness-item';
+        div.innerHTML = `
+            <span class="lateness-name">${escapeHtml(item.name)}</span>
+            <span class="lateness-time">${time}</span>
+            <button class="lateness-remove-btn" onclick="removeLateness(${index})">✕</button>
         `;
+        fragment.appendChild(div);
     });
-    els.latenessList.innerHTML = html;
+    
+    els.latenessList.innerHTML = '';
+    els.latenessList.appendChild(fragment);
 }
 
-// Note: This removes from UI only. For full delete support, you'd need a server endpoint.
 function removeLateness(index) {
     if (confirm('Hapus catatan keterlambatan ini?')) {
         state.lateness.splice(index, 1);
@@ -695,42 +727,52 @@ function renderPiket() {
         return;
     }
     
-    let html = '';
+    const fragment = document.createDocumentFragment();
+    
     state.piket.forEach(piket => {
         const done = piket.done || false;
         const hasPhoto1 = piket.photo1 && piket.photo1.length > 0;
         const hasPhoto2 = piket.photo2 && piket.photo2.length > 0;
         const names = piket.names ? piket.names.join(', ') : '';
         
-        html += `
-            <div class="piket-item ${done ? 'done' : ''}" id="piket-${piket.id}">
-                <div class="piket-info">
-                    <span class="piket-name">${escapeHtml(names)}</span>
-                    <span class="piket-status ${done ? 'done' : 'pending'}">
-                        ${done ? 'Selesai' : 'Belum'}
-                    </span>
-                </div>
-                <div class="piket-actions">
-                    <button class="piket-toggle ${done ? 'done' : ''}" onclick="togglePiket('${piket.id}', ${!done})">
-                        ${done ? 'Batal' : 'Selesai'}
-                    </button>
-                    <button class="piket-photo-btn ${hasPhoto1 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 1)">
-                        foto 1
-                    </button>
-                    <button class="piket-photo-btn ${hasPhoto2 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 2)">
-                        foto 2
-                    </button>
-                </div>
-                ${(hasPhoto1 || hasPhoto2) ? `
-                    <div class="piket-photos">
-                        ${hasPhoto1 ? `<a href="${piket.photo1}" target="_blank"><img src="${piket.photo1}" class="piket-thumb" alt="Foto 1"></a>` : ''}
-                        ${hasPhoto2 ? `<a href="${piket.photo2}" target="_blank"><img src="${piket.photo2}" class="piket-thumb" alt="Foto 2"></a>` : ''}
-                    </div>
-                ` : ''}
+        const div = document.createElement('div');
+        div.className = `piket-item ${done ? 'done' : ''}`;
+        div.id = `piket-${piket.id}`;
+        
+        let photosHtml = '';
+        if (hasPhoto1 || hasPhoto2) {
+            photosHtml = `<div class="piket-photos">
+                ${hasPhoto1 ? `<a href="${piket.photo1}" target="_blank"><img src="${piket.photo1}" class="piket-thumb" alt="Foto 1"></a>` : ''}
+                ${hasPhoto2 ? `<a href="${piket.photo2}" target="_blank"><img src="${piket.photo2}" class="piket-thumb" alt="Foto 2"></a>` : ''}
+            </div>`;
+        }
+        
+        div.innerHTML = `
+            <div class="piket-info">
+                <span class="piket-name">${escapeHtml(names)}</span>
+                <span class="piket-status ${done ? 'done' : 'pending'}">
+                    ${done ? 'Selesai' : 'Belum'}
+                </span>
             </div>
+            <div class="piket-actions">
+                <button class="piket-toggle ${done ? 'done' : ''}" onclick="togglePiket('${piket.id}', ${!done})">
+                    ${done ? 'Batal' : 'Selesai'}
+                </button>
+                <button class="piket-photo-btn ${hasPhoto1 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 1)">
+                    foto 1
+                </button>
+                <button class="piket-photo-btn ${hasPhoto2 ? 'has-photo' : ''}" onclick="uploadPiketPhoto('${piket.id}', 2)">
+                    foto 2
+                </button>
+            </div>
+            ${photosHtml}
         `;
+        
+        fragment.appendChild(div);
     });
-    els.piketList.innerHTML = html;
+    
+    els.piketList.innerHTML = '';
+    els.piketList.appendChild(fragment);
 }
 
 // ===== TOGGLE PIKET =====
@@ -745,7 +787,7 @@ async function togglePiket(id, done) {
     }
     
     try {
-        await apiCall('togglePiket', { id, done, date, kelas });
+        await apiCall('togglePiket', { id, done, date, kelas }, true);
         cacheData(kelas, date);
         await loadStudents(kelas, date);
     } catch (error) {
@@ -774,8 +816,7 @@ async function uploadPiketPhoto(id, photoNum) {
             showToast('Mengupload foto', 'Mengirim ke server...', 30);
             const result = await apiCall('uploadPiketPhoto', { id, photoNum, photo: base64 }, false, 'POST');
             if (result.success) {
-                updateToast('Foto terupload', 'Berhasil!', 100);
-                setTimeout(() => hideToastDelayed(800), 500);
+                hideToast();
                 await loadStudents(els.classSelector.value, els.dateSelector.value);
             } else {
                 showToast('Gagal upload', result.error || 'Unknown error', null, true);
@@ -828,11 +869,9 @@ function updateStats() {
         state.students.forEach(student => {
             const nis = student[0].toString();
             const status = state.attendance[nis] || 'hadir';
-            // Count the status as-is from attendance
             if (stats[status] !== undefined) {
                 stats[status]++;
             } else {
-                // If status is something unexpected, count as hadir
                 stats.hadir++;
             }
         });
@@ -872,7 +911,6 @@ function copyWhatsAppReport() {
         }
     }
     
-    // Add late students
     if (state.lateness && state.lateness.length) {
         const lateNames = state.lateness.map(l => l.name);
         report += `Terlambat: ${lateNames.join(', ')}\n`;
@@ -908,8 +946,6 @@ async function loadHistory() {
         showToast('Memuat history', `Tanggal ${formatDate(date)}`, 20);
         const data = await apiCall('getHistory', { date }, false);
         
-        updateToast('Memproses history', 'Menyusun data...', 70);
-        
         let html = `<h3>Rekap ${formatDate(date)}</h3>`;
         
         if (data.attendance && data.attendance.length) {
@@ -934,7 +970,6 @@ async function loadHistory() {
             html += `<p class="empty-state">Tidak ada data absensi untuk tanggal ini</p>`;
         }
         
-        // Add lateness to history
         if (data.lateness && data.lateness.length) {
             html += `<h4>Terlambat</h4>`;
             html += `<div class="student-grid">`;
@@ -960,10 +995,10 @@ async function loadHistory() {
         }
         
         els.historyContainer.innerHTML = html;
-        updateToast('History dimuat', `${data.attendance?.length || 0} record ditemukan`, 100);
-        setTimeout(() => hideToastDelayed(800), 500);
+        hideToast();
     } catch (error) {
         els.historyContainer.innerHTML = '<p class="empty-state">Gagal memuat history</p>';
+        if (toastActive) hideToast();
     }
 }
 
@@ -984,8 +1019,7 @@ async function uploadCSV() {
             const result = await apiCall('uploadCSV', { csv: encodeURIComponent(csv) }, false);
             
             if (result.success) {
-                updateToast('Upload berhasil', result.message || 'Data terimport', 100);
-                setTimeout(() => hideToastDelayed(1200), 500);
+                hideToast();
                 await loadClasses();
                 await loadStudents(els.classSelector.value, els.dateSelector.value);
             } else {
@@ -1098,8 +1132,7 @@ document.getElementById('piket-class-selector').addEventListener('change', async
         document.getElementById('piket-status').textContent = '';
         document.getElementById('piket-status').className = '';
         document.getElementById('piket-save-btn').style.display = 'none';
-        updateToast('Siswa dimuat', `${piketState.allStudents.length} siswa`, 100);
-        setTimeout(() => hideToastDelayed(600), 300);
+        hideToast();
     } catch (error) {
         document.getElementById('piket-student-list').innerHTML = '<p class="empty-state">Gagal memuat siswa</p>';
     }
@@ -1140,33 +1173,47 @@ function renderPiketBuilderStudents() {
     ];
     const dayLabels = { monday: 'Senin', tuesday: 'Selasa', wednesday: 'Rabu', thursday: 'Kamis', friday: 'Jumat' };
 
-    list.innerHTML = filtered.map(s => {
+    const fragment = document.createDocumentFragment();
+    
+    filtered.forEach(s => {
         const nis = s[0].toString();
         const isSelected = selectedNIS.has(nis);
         const assignedDay = findAssignedDay(nis);
         const dayLabel = assignedDay ? dayLabels[assignedDay] : '';
         const isOpen = expandedNis === nis;
 
-        return `
-            <div class="student-search-item ${isSelected ? 'selected' : ''}" data-nis="${nis}">
-                <div class="student-search-item-row" data-toggle="${nis}">
-                    <span class="student-name">${escapeHtml(s[1])}</span>
-                    <span class="student-nis">${s[0]}</span>
-                    ${isSelected ? ` <span class="assigned-day">${dayLabel}</span>` : ''}
+        const div = document.createElement('div');
+        div.className = `student-search-item ${isSelected ? 'selected' : ''}`;
+        div.dataset.nis = nis;
+        
+        let dayPickerHtml = '';
+        if (isOpen) {
+            dayPickerHtml = `
+                <div class="inline-day-picker">
+                    ${days.map(d => `
+                        <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-nis="${nis}" data-key="${d.key}">
+                            ${d.label} ${assignedDay === d.key ? '✓' : ''}
+                        </button>
+                    `).join('')}
+                    ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-nis="${nis}" data-key="remove">✕ Hapus</button>` : ''}
                 </div>
-                ${isOpen ? `
-                    <div class="inline-day-picker">
-                        ${days.map(d => `
-                            <button type="button" class="day-picker-btn ${assignedDay === d.key ? 'active' : ''}" data-nis="${nis}" data-key="${d.key}">
-                                ${d.label} ${assignedDay === d.key ? '✓' : ''}
-                            </button>
-                        `).join('')}
-                        ${assignedDay ? `<button type="button" class="day-picker-btn remove" data-nis="${nis}" data-key="remove">✕ Hapus</button>` : ''}
-                    </div>
-                ` : ''}
+            `;
+        }
+        
+        div.innerHTML = `
+            <div class="student-search-item-row" data-toggle="${nis}">
+                <span class="student-name">${escapeHtml(s[1])}</span>
+                <span class="student-nis">${s[0]}</span>
+                ${isSelected ? ` <span class="assigned-day">${dayLabel}</span>` : ''}
             </div>
+            ${dayPickerHtml}
         `;
-    }).join('');
+        
+        fragment.appendChild(div);
+    });
+    
+    list.innerHTML = '';
+    list.appendChild(fragment);
 
     list.querySelectorAll('[data-toggle]').forEach(el => {
         el.addEventListener('click', (e) => {
@@ -1248,8 +1295,7 @@ document.getElementById('piket-save-btn').onclick = async () => {
             document.getElementById('piket-status').textContent = 'Full week schedule saved!';
             document.getElementById('piket-status').className = 'status-msg success';
             document.getElementById('piket-save-btn').style.display = 'none';
-            updateToast('Jadwal tersimpan', 'Berhasil!', 100);
-            setTimeout(() => hideToastDelayed(800), 500);
+            hideToast();
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         } else {
             showToast('Gagal simpan', result.error || 'Unknown error', null, true);
@@ -1305,6 +1351,8 @@ function setupEventListeners() {
     });
     
     els.refreshBtn.addEventListener('click', async () => {
+        // Clear API cache on manual refresh
+        apiCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
     });
     
@@ -1314,6 +1362,7 @@ function setupEventListeners() {
     els.clearCacheBtn.addEventListener('click', () => {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
+            apiCache.clear();
             showToast('Cache dibersihkan', 'Refresh halaman', null, false);
             setTimeout(() => {
                 hideToast();
@@ -1322,11 +1371,7 @@ function setupEventListeners() {
         }
     });
     
-    // Lateness event listeners
     els.markLateBtn.addEventListener('click', markLateness);
-    els.lateStudentSelect.addEventListener('change', () => {
-        // Optional: auto-mark when selected? For now just enable button
-    });
 }
 
 // ===== ONLINE/OFFLINE =====
@@ -1341,6 +1386,11 @@ function updateOnlineStatus() {
     }
     if (state.isOnline) {
         processPendingActions();
+        // Refresh data when coming back online
+        if (els.classSelector.value) {
+            apiCache.clear();
+            loadStudents(els.classSelector.value, els.dateSelector.value);
+        }
     }
 }
 
@@ -1374,17 +1424,20 @@ document.addEventListener('DOMContentLoaded', async () => {
             els.classSelector.value = els.classSelector.options[1].value;
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         }
-    }, 300);
+    }, 100);
 });
 
 // ===== PERIODIC SYNC =====
 setInterval(() => {
     if (navigator.onLine && els.classSelector.value) {
+        // Clear cache for fresh data
+        apiCache.clear();
         loadStudents(els.classSelector.value, els.dateSelector.value);
         processPendingActions();
     }
 }, 300000);
 
+// ===== EXPOSE FUNCTIONS =====
 window.markAttendance = markAttendance;
 window.togglePiket = togglePiket;
 window.uploadPiketPhoto = uploadPiketPhoto;
