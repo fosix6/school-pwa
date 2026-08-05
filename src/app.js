@@ -3,8 +3,8 @@ const API_URL = '{{APPS_SCRIPT_URL}}';
 
 const CONFIG = {
     API_URL: API_URL,
-    CACHE_DURATION: 60000, // 1 minute cache
-    BATCH_DELAY: 300, // ms to wait for batch updates
+    CACHE_DURATION: 60000,
+    BATCH_DELAY: 300,
     MAX_CACHE_ITEMS: 10,
 };
 
@@ -197,11 +197,11 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         'uploadCSV': 'Mengupload CSV',
         'saveConfig': 'Menyimpan konfigurasi',
         'markLateness': 'Mencatat keterlambatan',
+        'getStudents': 'Memuat data siswa',
     };
     
     const label = actionLabels[action] || `Menjalankan ${action}`;
     
-    // Check cache for GET requests
     const cacheKey = `${action}_${JSON.stringify(params)}`;
     if (method === 'GET' && apiCache.has(cacheKey)) {
         const cached = apiCache.get(cacheKey);
@@ -233,14 +233,12 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         
-        // Cache the result for GET requests
         if (method === 'GET') {
             apiCache.set(cacheKey, {
                 data: data,
                 timestamp: Date.now()
             });
             
-            // Limit cache size
             if (apiCache.size > 50) {
                 const firstKey = apiCache.keys().next().value;
                 apiCache.delete(firstKey);
@@ -393,12 +391,12 @@ async function loadStudents(kelas, date) {
             fields: 'students,attendance,piket'
         }, true);
         
-        // Update state immediately
+        // Update state immediately - FIXED: Ensure piket data is properly assigned
         state.students = data.students || [];
         state.attendance = data.attendance || {};
         state.piket = data.piket || [];
         
-        // Build lateness efficiently using Map
+        // Build lateness efficiently
         const latenessMap = new Map();
         for (const [nis, status] of Object.entries(state.attendance)) {
             if (status === 'telat') {
@@ -415,9 +413,9 @@ async function loadStudents(kelas, date) {
         }
         state.lateness = Array.from(latenessMap.values());
         
-        // Render everything immediately
+        // Render everything
         renderOptimizedStudents();
-        renderPiket();
+        renderPiket(); // This should now work with proper piket data
         renderLateness();
         updateStats();
         updateLatenessSelect();
@@ -431,7 +429,6 @@ async function loadStudents(kelas, date) {
         // Cache data
         cacheData(kelas, date);
         
-        // Hide toast
         if (toastActive) hideToast();
         
     } catch (error) {
@@ -512,14 +509,13 @@ function getCachedData(kelas, date) {
     return parsed;
 }
 
-// ===== OPTIMIZED RENDER STUDENTS - WITH CACHING =====
+// ===== OPTIMIZED RENDER STUDENTS =====
 function renderOptimizedStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
     
-    // Create cache key
     const cacheKey = `${els.classSelector.value}_${els.dateSelector.value}`;
     const stateHash = JSON.stringify({
         students: state.students.map(s => s[0]),
@@ -527,14 +523,12 @@ function renderOptimizedStudents() {
         lateness: state.lateness.map(l => l.nis)
     });
     
-    // Check cache
     const cached = studentListCache.get(cacheKey);
     if (cached && cached.hash === stateHash) {
         els.studentList.innerHTML = cached.html;
         return;
     }
     
-    // Build HTML
     const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
     
     const statusLabels = {
@@ -570,16 +564,13 @@ function renderOptimizedStudents() {
         </div>`;
     }).join('');
     
-    // Update DOM
     els.studentList.innerHTML = studentHTML;
     
-    // Cache result
     studentListCache.set(cacheKey, {
         html: studentHTML,
         hash: stateHash
     });
     
-    // Limit cache size
     if (studentListCache.size > CONFIG.MAX_CACHE_ITEMS) {
         const firstKey = studentListCache.keys().next().value;
         studentListCache.delete(firstKey);
@@ -594,7 +585,6 @@ async function markAttendance(nis, status) {
     // Update UI immediately
     state.attendance[nis] = status;
     
-    // Update lateness
     const latenessMap = new Map();
     for (const [sNis, sStatus] of Object.entries(state.attendance)) {
         if (sStatus === 'telat') {
@@ -611,16 +601,13 @@ async function markAttendance(nis, status) {
     }
     state.lateness = Array.from(latenessMap.values());
     
-    // Update UI
     renderOptimizedStudents();
     renderLateness();
     updateStats();
     updateLatenessSelect();
     
-    // Queue for batch processing
     state.pendingUpdates.push({ nis, date, status, kelas });
     
-    // Debounce batch update
     if (state.updateTimeout) {
         clearTimeout(state.updateTimeout);
     }
@@ -638,12 +625,10 @@ async function flushAttendanceUpdates() {
     
     try {
         await apiCall('batchMarkAttendance', { updates }, true, 'POST');
-        // Update cache
         const kelas = els.classSelector.value;
         const date = els.dateSelector.value;
         cacheData(kelas, date);
     } catch (error) {
-        // Queue each update for offline
         updates.forEach(u => queueAction('markAttendance', u));
     }
 }
@@ -722,6 +707,7 @@ function removeLateness(index) {
 
 // ===== RENDER PIKET =====
 function renderPiket() {
+    // Check if piket data exists and has items
     if (!state.piket || !state.piket.length) {
         els.piketList.innerHTML = '<p class="empty-state">Tidak ada piket untuk hari ini</p>';
         return;
@@ -1351,7 +1337,6 @@ function setupEventListeners() {
     });
     
     els.refreshBtn.addEventListener('click', async () => {
-        // Clear API cache on manual refresh
         apiCache.clear();
         studentListCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
@@ -1388,7 +1373,6 @@ function updateOnlineStatus() {
     }
     if (state.isOnline) {
         processPendingActions();
-        // Refresh data when coming back online
         if (els.classSelector.value) {
             apiCache.clear();
             studentListCache.clear();
@@ -1433,7 +1417,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ===== PERIODIC SYNC =====
 setInterval(() => {
     if (navigator.onLine && els.classSelector.value) {
-        // Clear cache for fresh data
         apiCache.clear();
         studentListCache.clear();
         loadStudents(els.classSelector.value, els.dateSelector.value);
