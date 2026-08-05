@@ -1,10 +1,11 @@
 // ===== CONFIGURATION =====
-// ⚠️ REPLACE WITH YOUR APPS SCRIPT URL
 const API_URL = '{{APPS_SCRIPT_URL}}';
 
 const CONFIG = {
     API_URL: API_URL,
-    CACHE_DURATION: 3600000,
+    CACHE_DURATION: 60000, // 1 minute cache
+    BATCH_DELAY: 300, // ms to wait for batch updates
+    MAX_CACHE_ITEMS: 10,
 };
 
 // ===== STATE =====
@@ -18,6 +19,8 @@ let state = {
     pendingActions: [],
     isOnline: navigator.onLine,
     currentTab: 'today',
+    pendingUpdates: [],
+    updateTimeout: null,
 };
 
 // ===== DOM REFS =====
@@ -60,6 +63,7 @@ const els = {
 
 // ===== API CACHE =====
 const apiCache = new Map();
+const studentListCache = new Map();
 
 // ========================================
 // PIKET SCHEDULE BUILDER (Admin Panel)
@@ -180,13 +184,13 @@ function escapeHtml(str) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
+// ===== OPTIMIZED API CALL =====
 async function apiCall(action, params = {}, showLoadingToast = true, method = 'GET') {
     const actionLabels = {
+        'getFullClassData': 'Memuat data kelas',
+        'batchMarkAttendance': 'Menyimpan absensi',
         'getClasses': 'Memuat daftar kelas',
-        'getStudents': 'Memuat data siswa',
-        'getAttendance': 'Memuat absensi',
         'getPiket': 'Memuat jadwal piket',
-        'markAttendance': 'Menyimpan absensi',
         'togglePiket': 'Mengupdate piket',
         'uploadPiketPhoto': 'Mengupload foto',
         'getHistory': 'Memuat history',
@@ -201,7 +205,7 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
     const cacheKey = `${action}_${JSON.stringify(params)}`;
     if (method === 'GET' && apiCache.has(cacheKey)) {
         const cached = apiCache.get(cacheKey);
-        if (Date.now() - cached.timestamp < 5000) { // 5 second cache
+        if (Date.now() - cached.timestamp < CONFIG.CACHE_DURATION) {
             return cached.data;
         }
     }
@@ -235,11 +239,16 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
                 data: data,
                 timestamp: Date.now()
             });
+            
+            // Limit cache size
+            if (apiCache.size > 50) {
+                const firstKey = apiCache.keys().next().value;
+                apiCache.delete(firstKey);
+            }
         }
         
         if (showLoadingToast) {
             updateToast(label, 'Selesai!', 100);
-            // Only hide toast after a brief moment for UX
             setTimeout(() => hideToastDelayed(300), 200);
         }
         return data;
@@ -357,7 +366,7 @@ async function loadClasses() {
     }
 }
 
-// ===== LOAD STUDENTS - OPTIMIZED =====
+// ===== OPTIMIZED LOAD STUDENTS - SINGLE API CALL =====
 async function loadStudents(kelas, date) {
     if (!kelas) {
         els.studentList.innerHTML = '<p class="empty-state">Pilih kelas untuk mulai</p>';
@@ -377,24 +386,25 @@ async function loadStudents(kelas, date) {
     `;
     
     try {
-        const [studentData, attData, piketData] = await Promise.all([
-            apiCall('getStudents', { kelas }, false),
-            apiCall('getAttendance', { date, kelas }, false),
-            apiCall('getPiket', { date, kelas }, false)
-        ]);
+        // SINGLE API CALL - combines students, attendance, and piket
+        const data = await apiCall('getFullClassData', { 
+            kelas, 
+            date,
+            fields: 'students,attendance,piket'
+        }, true);
         
         // Update state immediately
-        state.students = studentData.students || [];
-        state.attendance = attData.attendance || {};
-        state.piket = piketData.piket || [];
+        state.students = data.students || [];
+        state.attendance = data.attendance || {};
+        state.piket = data.piket || [];
         
-        // Build lateness from attendance data
-        state.lateness = [];
+        // Build lateness efficiently using Map
+        const latenessMap = new Map();
         for (const [nis, status] of Object.entries(state.attendance)) {
             if (status === 'telat') {
                 const student = state.students.find(s => s[0].toString() === nis);
                 if (student) {
-                    state.lateness.push({
+                    latenessMap.set(nis, {
                         nis: nis,
                         name: student[1],
                         date: date,
@@ -403,9 +413,10 @@ async function loadStudents(kelas, date) {
                 }
             }
         }
+        state.lateness = Array.from(latenessMap.values());
         
         // Render everything immediately
-        renderStudents();
+        renderOptimizedStudents();
         renderPiket();
         renderLateness();
         updateStats();
@@ -420,7 +431,7 @@ async function loadStudents(kelas, date) {
         // Cache data
         cacheData(kelas, date);
         
-        // Hide toast immediately if it was showing
+        // Hide toast
         if (toastActive) hideToast();
         
     } catch (error) {
@@ -431,12 +442,12 @@ async function loadStudents(kelas, date) {
             state.attendance = cached.attendance || {};
             state.piket = cached.piket || [];
             
-            state.lateness = [];
+            const latenessMap = new Map();
             for (const [nis, status] of Object.entries(state.attendance)) {
                 if (status === 'telat') {
                     const student = state.students.find(s => s[0].toString() === nis);
                     if (student) {
-                        state.lateness.push({
+                        latenessMap.set(nis, {
                             nis: nis,
                             name: student[1],
                             date: date,
@@ -445,8 +456,9 @@ async function loadStudents(kelas, date) {
                     }
                 }
             }
+            state.lateness = Array.from(latenessMap.values());
             
-            renderStudents();
+            renderOptimizedStudents();
             renderPiket();
             renderLateness();
             updateStats();
@@ -467,12 +479,12 @@ async function loadStudents(kelas, date) {
 
 // ===== CACHE =====
 function cacheData(kelas, date) {
-    state.lateness = [];
+    const latenessMap = new Map();
     for (const [nis, status] of Object.entries(state.attendance)) {
         if (status === 'telat') {
             const student = state.students.find(s => s[0].toString() === nis);
             if (student) {
-                state.lateness.push({
+                latenessMap.set(nis, {
                     nis: nis,
                     name: student[1],
                     date: date,
@@ -486,7 +498,7 @@ function cacheData(kelas, date) {
         students: state.students,
         attendance: state.attendance,
         piket: state.piket,
-        lateness: state.lateness,
+        lateness: Array.from(latenessMap.values()),
         timestamp: Date.now(),
     };
     localStorage.setItem(`cache_${kelas}_${date}`, JSON.stringify(cache));
@@ -500,88 +512,95 @@ function getCachedData(kelas, date) {
     return parsed;
 }
 
-// ===== RENDER STUDENTS - OPTIMIZED WITH DOCUMENT FRAGMENT =====
-function renderStudents() {
+// ===== OPTIMIZED RENDER STUDENTS - WITH CACHING =====
+function renderOptimizedStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
     
-    const fragment = document.createDocumentFragment();
-    const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
-    
-    state.students.forEach(student => {
-        const nis = student[0].toString();
-        const name = student[1];
-        const status = state.attendance[nis] || 'hadir';
-        const isLate = lateNIS.has(nis) || status === 'telat';
-        const displayStatus = isLate ? 'terlambat' : status;
-        
-        const statusLabels = {
-            hadir: { label: 'Hadir', emoji: 'H', class: 'status-hadir' },
-            absen: { label: 'Absen', emoji: 'A', class: 'status-absen' },
-            sakit: { label: 'Sakit', emoji: 'S', class: 'status-sakit' },
-            izin: { label: 'Izin', emoji: 'I', class: 'status-izin' },
-            terlambat: { label: 'Telat', emoji: 'T', class: 'status-terlambat' }
-        };
-        const info = statusLabels[displayStatus] || statusLabels.hadir;
-        
-        const statusOptions = [
-            { value: 'hadir', label: 'H', class: 'status-hadir' },
-            { value: 'absen', label: 'A', class: 'status-absen' },
-            { value: 'sakit', label: 'S', class: 'status-sakit' },
-            { value: 'izin', label: 'I', class: 'status-izin' },
-            { value: 'telat', label: 'T', class: 'status-terlambat' }
-        ];
-        
-        const card = document.createElement('div');
-        card.className = `student-card status-${displayStatus}`;
-        
-        let btnsHtml = statusOptions.map(s => {
-            const isActive = displayStatus === s.value || (s.value === 'telat' && isLate);
-            return `<button class="status-btn ${isActive ? 'active' : ''} ${s.class}" 
-                    data-status="${s.value}" 
-                    onclick="markAttendance('${nis}', '${s.value}')">
-                ${s.label}
-            </button>`;
-        }).join('');
-        
-        card.innerHTML = `
-            <div class="student-info">
-                <span class="student-name">${escapeHtml(name)}</span>
-                <span class="student-nis">#${nis}</span>
-            </div>
-            <div class="student-status-badge ${info.class}">
-                ${info.emoji} ${info.label}
-            </div>
-            <div class="status-btns">
-                ${btnsHtml}
-            </div>
-        `;
-        
-        fragment.appendChild(card);
+    // Create cache key
+    const cacheKey = `${els.classSelector.value}_${els.dateSelector.value}`;
+    const stateHash = JSON.stringify({
+        students: state.students.map(s => s[0]),
+        attendance: state.attendance,
+        lateness: state.lateness.map(l => l.nis)
     });
     
-    // Replace content in one operation
-    els.studentList.innerHTML = '';
-    els.studentList.appendChild(fragment);
+    // Check cache
+    const cached = studentListCache.get(cacheKey);
+    if (cached && cached.hash === stateHash) {
+        els.studentList.innerHTML = cached.html;
+        return;
+    }
+    
+    // Build HTML
+    const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
+    
+    const statusLabels = {
+        hadir: { label: 'H', class: 'status-hadir' },
+        absen: { label: 'A', class: 'status-absen' },
+        sakit: { label: 'S', class: 'status-sakit' },
+        izin: { label: 'I', class: 'status-izin' },
+        telat: { label: 'T', class: 'status-terlambat' }
+    };
+    
+    const studentHTML = state.students.map(student => {
+        const nis = student[0].toString();
+        const status = state.attendance[nis] || 'hadir';
+        const isLate = lateNIS.has(nis) || status === 'telat';
+        const displayStatus = isLate ? 'telat' : status;
+        const info = statusLabels[displayStatus] || statusLabels.hadir;
+        
+        let btnsHtml = '';
+        for (const [key, val] of Object.entries(statusLabels)) {
+            const isActive = displayStatus === key || (key === 'telat' && isLate);
+            btnsHtml += `<button class="status-btn ${isActive ? 'active' : ''} ${val.class}" 
+                         data-status="${key}" 
+                         onclick="markAttendance('${nis}', '${key}')">${val.label}</button>`;
+        }
+        
+        return `<div class="student-card status-${displayStatus}">
+            <div class="student-info">
+                <span class="student-name">${escapeHtml(student[1])}</span>
+                <span class="student-nis">#${nis}</span>
+            </div>
+            <div class="student-status-badge ${info.class}">${info.label}</div>
+            <div class="status-btns">${btnsHtml}</div>
+        </div>`;
+    }).join('');
+    
+    // Update DOM
+    els.studentList.innerHTML = studentHTML;
+    
+    // Cache result
+    studentListCache.set(cacheKey, {
+        html: studentHTML,
+        hash: stateHash
+    });
+    
+    // Limit cache size
+    if (studentListCache.size > CONFIG.MAX_CACHE_ITEMS) {
+        const firstKey = studentListCache.keys().next().value;
+        studentListCache.delete(firstKey);
+    }
 }
 
-// ===== MARK ATTENDANCE =====
+// ===== BATCH ATTENDANCE UPDATES =====
 async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
     
-    // Update attendance immediately
+    // Update UI immediately
     state.attendance[nis] = status;
     
-    // Rebuild lateness
-    state.lateness = [];
+    // Update lateness
+    const latenessMap = new Map();
     for (const [sNis, sStatus] of Object.entries(state.attendance)) {
         if (sStatus === 'telat') {
             const student = state.students.find(s => s[0].toString() === sNis);
             if (student) {
-                state.lateness.push({
+                latenessMap.set(sNis, {
                     nis: sNis,
                     name: student[1],
                     date: date,
@@ -590,19 +609,42 @@ async function markAttendance(nis, status) {
             }
         }
     }
+    state.lateness = Array.from(latenessMap.values());
     
-    // Update UI immediately
-    renderStudents();
+    // Update UI
+    renderOptimizedStudents();
     renderLateness();
     updateStats();
     updateLatenessSelect();
     
-    // Send to server
+    // Queue for batch processing
+    state.pendingUpdates.push({ nis, date, status, kelas });
+    
+    // Debounce batch update
+    if (state.updateTimeout) {
+        clearTimeout(state.updateTimeout);
+    }
+    state.updateTimeout = setTimeout(() => {
+        flushAttendanceUpdates();
+    }, CONFIG.BATCH_DELAY);
+}
+
+async function flushAttendanceUpdates() {
+    if (!state.pendingUpdates.length) return;
+    
+    const updates = state.pendingUpdates;
+    state.pendingUpdates = [];
+    state.updateTimeout = null;
+    
     try {
-        await apiCall('markAttendance', { nis, date, status, kelas }, true);
+        await apiCall('batchMarkAttendance', { updates }, true, 'POST');
+        // Update cache
+        const kelas = els.classSelector.value;
+        const date = els.dateSelector.value;
         cacheData(kelas, date);
     } catch (error) {
-        queueAction('markAttendance', { nis, date, status, kelas });
+        // Queue each update for offline
+        updates.forEach(u => queueAction('markAttendance', u));
     }
 }
 
@@ -638,48 +680,6 @@ async function markLateness() {
     updateLatenessSelect();
 }
 
-async function toggleLateness(nis) {
-    const date = els.dateSelector.value;
-    const kelas = els.classSelector.value;
-    const lateNIS = new Set(state.lateness.map(l => l.nis));
-    
-    if (lateNIS.has(nis.toString())) {
-        showToast('⚠️ Hapus tidak didukung', 'Gunakan tombol di panel keterlambatan', null, true);
-        setTimeout(() => hideToastDelayed(1500), 1000);
-        return;
-    }
-    
-    const student = state.students.find(s => s[0].toString() === nis);
-    const name = student ? student[1] : nis;
-    
-    try {
-        await apiCall('markLateness', { nis, date }, true, 'POST');
-        state.lateness.push({
-            nis: nis.toString(),
-            name: name,
-            date: date,
-            timestamp: new Date().toISOString()
-        });
-        renderLateness();
-        renderStudents();
-        updateStats();
-        updateLatenessSelect();
-        cacheData(kelas, date);
-    } catch (error) {
-        queueAction('markLateness', { nis, date });
-        state.lateness.push({
-            nis: nis.toString(),
-            name: name,
-            date: date,
-            timestamp: new Date().toISOString()
-        });
-        renderLateness();
-        renderStudents();
-        updateStats();
-        updateLatenessSelect();
-    }
-}
-
 function renderLateness() {
     if (!state.lateness || !state.lateness.length) {
         els.latenessList.innerHTML = '<p class="empty-state">Tidak ada siswa terlambat hari ini</p>';
@@ -711,7 +711,7 @@ function removeLateness(index) {
     if (confirm('Hapus catatan keterlambatan ini?')) {
         state.lateness.splice(index, 1);
         renderLateness();
-        renderStudents();
+        renderOptimizedStudents();
         updateStats();
         updateLatenessSelect();
         const kelas = els.classSelector.value;
@@ -1353,6 +1353,7 @@ function setupEventListeners() {
     els.refreshBtn.addEventListener('click', async () => {
         // Clear API cache on manual refresh
         apiCache.clear();
+        studentListCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
     });
     
@@ -1363,6 +1364,7 @@ function setupEventListeners() {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
             apiCache.clear();
+            studentListCache.clear();
             showToast('Cache dibersihkan', 'Refresh halaman', null, false);
             setTimeout(() => {
                 hideToast();
@@ -1389,6 +1391,7 @@ function updateOnlineStatus() {
         // Refresh data when coming back online
         if (els.classSelector.value) {
             apiCache.clear();
+            studentListCache.clear();
             loadStudents(els.classSelector.value, els.dateSelector.value);
         }
     }
@@ -1432,6 +1435,7 @@ setInterval(() => {
     if (navigator.onLine && els.classSelector.value) {
         // Clear cache for fresh data
         apiCache.clear();
+        studentListCache.clear();
         loadStudents(els.classSelector.value, els.dateSelector.value);
         processPendingActions();
     }
