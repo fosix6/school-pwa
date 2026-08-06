@@ -26,6 +26,7 @@ let state = {
 // ===== DOM REFS =====
 const $ = (id) => document.getElementById(id);
 const els = {
+    studentSearch: $('student-search'),
     classSelector: $('class-selector'),
     dateSelector: $('date-selector'),
     studentList: $('student-list'),
@@ -389,7 +390,7 @@ async function loadStudents(kelas, date) {
             kelas, 
             date,
             fields: 'students,attendance,piket'
-        }, true);
+        }, false);
         
         // Update state immediately - FIXED: Ensure piket data is properly assigned
         state.students = data.students || [];
@@ -509,28 +510,41 @@ function getCachedData(kelas, date) {
     return parsed;
 }
 
-// ===== OPTIMIZED RENDER STUDENTS =====
+function fuzzyMatch(query, text) {
+    if (!query) return true;
+    query = query.toLowerCase();
+    text = text.toLowerCase();
+    let qi = 0;
+    for (let i = 0; i < text.length && qi < query.length; i++) {
+        if (text[i] === query[qi]) qi++;
+    }
+    return qi === query.length;
+}
+
 function renderOptimizedStudents() {
     if (!state.students || !state.students.length) {
         els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa di kelas ini</p>';
         return;
     }
-    
+
+    const query = (els.studentSearch?.value || '').trim();
+
     const cacheKey = `${els.classSelector.value}_${els.dateSelector.value}`;
     const stateHash = JSON.stringify({
         students: state.students.map(s => s[0]),
         attendance: state.attendance,
         lateness: state.lateness.map(l => l.nis)
     });
-    
-    const cached = studentListCache.get(cacheKey);
-    if (cached && cached.hash === stateHash) {
-        els.studentList.innerHTML = cached.html;
-        return;
+
+    if (!query) {
+        const cached = studentListCache.get(cacheKey);
+        if (cached && cached.hash === stateHash) {
+            els.studentList.innerHTML = cached.html;
+            return;
+        }
     }
-    
+
     const lateNIS = new Set(state.lateness.map(l => l.nis.toString()));
-    
     const statusLabels = {
         hadir: { label: 'H', class: 'status-hadir' },
         absen: { label: 'A', class: 'status-absen' },
@@ -538,14 +552,23 @@ function renderOptimizedStudents() {
         izin: { label: 'I', class: 'status-izin' },
         telat: { label: 'T', class: 'status-terlambat' }
     };
-    
-    const studentHTML = state.students.map(student => {
+
+    const filteredStudents = query
+        ? state.students.filter(s => fuzzyMatch(query, s[1]) || fuzzyMatch(query, s[0].toString()))
+        : state.students;
+
+    if (query && !filteredStudents.length) {
+        els.studentList.innerHTML = '<p class="empty-state">Tidak ada siswa yang cocok</p>';
+        return;
+    }
+
+    const studentHTML = filteredStudents.map(student => {
         const nis = student[0].toString();
         const status = state.attendance[nis] || 'hadir';
         const isLate = lateNIS.has(nis) || status === 'telat';
         const displayStatus = isLate ? 'telat' : status;
         const info = statusLabels[displayStatus] || statusLabels.hadir;
-        
+
         let btnsHtml = '';
         for (const [key, val] of Object.entries(statusLabels)) {
             const isActive = displayStatus === key || (key === 'telat' && isLate);
@@ -553,7 +576,7 @@ function renderOptimizedStudents() {
                          data-status="${key}" 
                          onclick="markAttendance('${nis}', '${key}')">${val.label}</button>`;
         }
-        
+
         return `<div class="student-card status-${displayStatus}">
             <div class="student-info">
                 <span class="student-name">${escapeHtml(student[1])}</span>
@@ -563,21 +586,18 @@ function renderOptimizedStudents() {
             <div class="status-btns">${btnsHtml}</div>
         </div>`;
     }).join('');
-    
+
     els.studentList.innerHTML = studentHTML;
-    
-    studentListCache.set(cacheKey, {
-        html: studentHTML,
-        hash: stateHash
-    });
-    
-    if (studentListCache.size > CONFIG.MAX_CACHE_ITEMS) {
-        const firstKey = studentListCache.keys().next().value;
-        studentListCache.delete(firstKey);
+
+    if (!query) {
+        studentListCache.set(cacheKey, { html: studentHTML, hash: stateHash });
+        if (studentListCache.size > CONFIG.MAX_CACHE_ITEMS) {
+            const firstKey = studentListCache.keys().next().value;
+            studentListCache.delete(firstKey);
+        }
     }
 }
 
-// ===== BATCH ATTENDANCE UPDATES =====
 async function markAttendance(nis, status) {
     const date = els.dateSelector.value;
     const kelas = els.classSelector.value;
@@ -1340,6 +1360,9 @@ function setupEventListeners() {
         apiCache.clear();
         studentListCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
+    });
+    els.studentSearch.addEventListener('input', () => {
+        renderOptimizedStudents();
     });
     
     els.whatsappBtn.addEventListener('click', copyWhatsAppReport);
