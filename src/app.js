@@ -75,6 +75,12 @@ const els = {
     capturePhotoBtn: $('capture-photo-btn'),
     closeCameraBtn: $('close-camera-btn'),
     modelStatus: $('model-status'),
+    loginScreen: $('login-screen'),
+    appContainer: $('app'),
+    passwordInput: $('password-input'),
+    loginBtn: $('login-btn'),
+    loginError: $('login-error'),
+    logoutBtn: $('logout-btn'),
 };
 
 // ===== API CACHE =====
@@ -95,6 +101,97 @@ const FACE_MATCH_THRESHOLD = 0.55;
 // ===== LOADING TOAST =====
 let toastTimeout = null;
 let toastActive = false;
+
+// ===== PASSWORDS =====
+const PASSWORDS = {
+    admin: '007844',    // Full access
+    lateness: '123444'  // Only Face tab
+};
+
+// ===== USER STATE =====
+let userRole = null; // 'admin' or 'lateness'
+
+// ========================================
+// LOGIN SYSTEM
+// ========================================
+
+function handleLogin() {
+    const password = els.passwordInput.value.trim();
+    const errorEl = els.loginError;
+    
+    if (password === PASSWORDS.admin) {
+        userRole = 'admin';
+        errorEl.style.display = 'none';
+        showApp();
+    } else if (password === PASSWORDS.lateness) {
+        userRole = 'lateness';
+        errorEl.style.display = 'none';
+        showApp();
+    } else {
+        errorEl.style.display = 'block';
+        els.passwordInput.value = '';
+        els.passwordInput.focus();
+        setTimeout(() => {
+            errorEl.style.display = 'none';
+        }, 3000);
+    }
+}
+
+function showApp() {
+    els.loginScreen.style.display = 'none';
+    els.appContainer.style.display = 'block';
+    
+    // Show/hide tabs based on role
+    const adminTab = document.getElementById('tab-admin-btn');
+    const historyTab = document.getElementById('tab-history-btn');
+    const todayTab = document.getElementById('tab-today-btn');
+    const faceTab = document.getElementById('tab-face-btn');
+    
+    if (userRole === 'admin') {
+        // Full access - show all tabs
+        adminTab.style.display = 'block';
+        historyTab.style.display = 'block';
+        todayTab.style.display = 'block';
+        faceTab.style.display = 'block';
+        // Switch to today tab
+        switchTab('today');
+    } else if (userRole === 'lateness') {
+        // Only Face tab
+        adminTab.style.display = 'none';
+        historyTab.style.display = 'none';
+        todayTab.style.display = 'none';
+        faceTab.style.display = 'block';
+        // Switch to face tab
+        switchTab('face');
+    }
+    
+    initializeApp();
+}
+
+function logout() {
+    userRole = null;
+    els.appContainer.style.display = 'none';
+    els.loginScreen.style.display = 'flex';
+    els.passwordInput.value = '';
+    els.passwordInput.focus();
+    // Close camera if open
+    if (isCameraOpen) {
+        closeCamera();
+    }
+}
+
+// Login event listeners
+els.passwordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLogin();
+    }
+});
+
+els.loginBtn.addEventListener('click', handleLogin);
+
+// Logout button
+document.getElementById('logout-btn').addEventListener('click', logout);
 
 function showToast(message, detail = '', progress = null, isError = false) {
     const toast = els.loadingToast;
@@ -2245,9 +2342,16 @@ function setupEventListeners() {
     els.markLateBtn.addEventListener('click', markLateness);
     
     // FACE RECOGNITION EVENTS
+    // In setupEventListeners, update the face events to check role
     if (els.faceScanBtn) {
-        els.faceScanBtn.addEventListener('click', openCamera);
-    }
+        els.faceScanBtn.addEventListener('click', () => {
+            if (userRole === 'admin' || userRole === 'lateness') {
+                openCamera();
+            } else {
+                showToast('Akses ditolak', 'Anda tidak memiliki izin', null, true);
+            }
+        });
+    }   
     
     if (els.capturePhotoBtn) {
         els.capturePhotoBtn.addEventListener('click', capturePhoto);
@@ -2300,7 +2404,7 @@ function registerSW() {
 // INITIALIZATION
 // ========================================
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function initializeApp() {
     els.dateSelector.value = state.currentDate;
     els.historyDate.value = state.currentDate;
     
@@ -2317,6 +2421,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         }
     }, 500);
+}
+
+// Remove the old DOMContentLoaded listener and replace with:
+document.addEventListener('DOMContentLoaded', () => {
+    // Login screen is shown by default
+    els.passwordInput.focus();
 });
 
 // ========================================
