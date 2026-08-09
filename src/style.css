@@ -1,7 +1,7 @@
 :root {
     --surface: #ffffff;
     --border: #d5d2c9;
-    --text: #00000;
+    --text: #000000;
     --text-secondary: #5f5d58;
     --accent: #1a6bb0;
     --accent-hover: #155a96;
@@ -16,6 +16,7 @@
     --radius: 10px;
     --shadow: 0 2px 8px rgba(0,0,0,0.06);
     --transition: 0.2s ease;
+    --bg: #f1efe8;
 }
 
 * { box-sizing: border-box; }
@@ -33,86 +34,6 @@ body {
     max-width: 640px;
     margin: 0 auto;
     padding: 1rem 1rem 4rem;
-}
-
-/* ===== LOGIN SCREEN ===== */
-.login-screen {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #f1efe8;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 999999;
-    padding: 20px;
-}
-
-.login-card {
-    background: white;
-    border-radius: 16px;
-    padding: 40px 32px;
-    max-width: 400px;
-    width: 100%;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.1);
-    text-align: center;
-}
-
-.login-card h1 {
-    margin: 0 0 4px 0;
-    font-size: 26px;
-    font-weight: 700;
-}
-
-.login-subtitle {
-    color: var(--text-secondary);
-    margin: 0 0 24px 0;
-    font-size: 15px;
-}
-
-.login-input-group {
-    display: flex;
-    gap: 8px;
-}
-
-.login-input-group input {
-    flex: 1;
-    padding: 12px 16px;
-    border: 2px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 16px;
-    font-family: inherit;
-    background: var(--bg);
-    color: var(--text);
-    transition: border-color var(--transition);
-}
-
-.login-input-group input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(26, 107, 176, 0.12);
-}
-
-.login-input-group button {
-    padding: 12px 24px;
-    font-size: 16px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.login-error {
-    margin-top: 12px;
-    color: var(--danger);
-    font-size: 14px;
-    font-weight: 500;
-}
-
-.login-hint {
-    margin-top: 16px;
-    color: var(--text-secondary);
-    font-size: 12px;
 }
 
 /* ===== HEADER ===== */
@@ -446,16 +367,6 @@ button:active { transform: scale(0.97); }
     font-size: 12px;
     color: var(--text-secondary);
 }
-.lateness-remove-btn {
-    background: none;
-    border: none;
-    color: var(--danger);
-    font-size: 16px;
-    cursor: pointer;
-    padding: 0 4px;
-    line-height: 1;
-}
-.lateness-remove-btn:hover { color: var(--danger-hover); }
 
 /* ===== PIKET ITEMS ===== */
 .piket-grid {
@@ -560,8 +471,8 @@ button:active { transform: scale(0.97); }
     font-size: 13px;
 }
 
-/* ===== BIOMETRIC ===== */
-.biometric-form {
+/* ===== FACE / CAMERA ===== */
+.face-form {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -597,7 +508,7 @@ button:active { transform: scale(0.97); }
     box-shadow: 0 0 0 3px rgba(26, 107, 176, 0.12);
 }
 
-.biometric-scan-btn {
+.face-scan-btn {
     padding: 14px 20px;
     font-size: 18px;
     font-weight: 600;
@@ -613,31 +524,31 @@ button:active { transform: scale(0.97); }
     gap: 12px;
 }
 
-.biometric-scan-btn:hover {
+.face-scan-btn:hover {
     background: var(--accent-hover);
     transform: scale(1.02);
 }
 
-.biometric-scan-btn:active {
+.face-scan-btn:active {
     transform: scale(0.97);
 }
 
-.biometric-scan-btn:disabled {
+.face-scan-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
     transform: none;
 }
 
-.fingerprint-icon {
+.camera-icon {
     font-size: 28px;
 }
 
-.biometric-register h4 {
+.face-register h4 {
     margin: 0 0 4px 0;
     font-size: 15px;
 }
 
-.biometric-register p {
+.face-register p {
     margin: 0 0 12px 0;
     font-size: 13px;
     color: var(--text-secondary);
@@ -663,6 +574,92 @@ button:active { transform: scale(0.97); }
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(26, 107, 176, 0.12);
+}
+
+/* Camera preview */
+#camera-container {
+    position: relative;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4/3;
+}
+
+#camera-preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.camera-controls {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+}
+
+/* Face confirmation overlay */
+.face-confirm-overlay {
+    z-index: 1000001 !important;
+}
+
+.face-confirm-dialog {
+    background: white;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 400px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.3);
+    text-align: center;
+}
+
+.face-confirm-dialog img {
+    width: 100%;
+    max-height: 200px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+
+.face-confirm-dialog .student-name {
+    font-weight: 600;
+    font-size: 18px;
+    margin: 0 0 4px 0;
+}
+
+.face-confirm-dialog .student-nis {
+    color: #999;
+    font-size: 13px;
+    margin: 0 0 16px 0;
+}
+
+.face-confirm-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.face-confirm-buttons button {
+    flex: 1;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 15px;
+}
+
+.face-confirm-buttons .btn-no {
+    border: 1px solid #ddd;
+    background: transparent;
+}
+
+.face-confirm-buttons .btn-yes {
+    border: none;
+    background: var(--accent);
+    color: white;
 }
 
 /* ===== STUDENT SELECT OVERLAY ===== */
@@ -670,113 +667,74 @@ button:active { transform: scale(0.97); }
     z-index: 1000001 !important;
 }
 
-.student-select-dialog button[data-nis]:hover {
-    background: #f0f0f0 !important;
+.student-select-dialog {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.3);
 }
 
-/* ===== BIOMETRIC ===== */
-.biometric-form {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+.student-select-dialog h3 {
+    margin: 0 0 8px 0;
 }
 
-.form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.student-select-dialog p {
+    margin: 0 0 16px 0;
+    color: #666;
+    font-size: 14px;
 }
 
-.form-group label {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-}
-
-.form-group select,
-.form-group input {
+.student-select-dialog input {
+    width: 100%;
     padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border: 1px solid #ddd;
+    border-radius: 8px;
     font-size: 15px;
-    font-family: inherit;
-    background: var(--bg);
-    color: var(--text);
+    box-sizing: border-box;
+    margin-bottom: 12px;
 }
 
-.form-group select:focus,
-.form-group input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(26, 107, 176, 0.12);
+.student-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 200px;
+    overflow-y: auto;
 }
 
-.biometric-scan-btn {
-    padding: 14px 20px;
-    font-size: 18px;
-    font-weight: 600;
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: var(--radius);
+.student-select-list button {
+    padding: 10px 14px;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background: white;
     cursor: pointer;
-    transition: all var(--transition);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
+    text-align: left;
+    font-size: 14px;
+    transition: background 0.15s;
+    width: 100%;
 }
 
-.biometric-scan-btn:hover {
-    background: var(--accent-hover);
-    transform: scale(1.02);
+.student-select-list button:hover {
+    background: #f0f0f0;
 }
 
-.biometric-scan-btn:active {
-    transform: scale(0.97);
+.student-select-list button .nis-label {
+    color: #999;
+    font-size: 12px;
 }
 
-.biometric-scan-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.fingerprint-icon {
-    font-size: 28px;
-}
-
-.biometric-register h4 {
-    margin: 0 0 4px 0;
-    font-size: 15px;
-}
-
-.biometric-register p {
-    margin: 0 0 12px 0;
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-
-.form-row {
-    display: flex;
-    gap: 8px;
-}
-
-.form-row input {
-    flex: 1;
-    padding: 10px 12px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    font-size: 15px;
-    font-family: inherit;
-    background: var(--bg);
-    color: var(--text);
-}
-
-.form-row input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(26, 107, 176, 0.12);
+.student-select-cancel {
+    margin-top: 12px;
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    width: 100%;
 }
 
 /* ===== DIALOGS ===== */
@@ -1145,15 +1103,6 @@ dialog input:focus, dialog select:focus {
     box-sizing: border-box;
 }
 
-/* ===== STUDENT SELECT OVERLAY ===== */
-.student-select-overlay {
-    z-index: 1000001 !important;
-}
-
-.student-select-dialog button[data-nis]:hover {
-    background: #f0f0f0 !important;
-}
-
 /* ===== MISC ===== */
 hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 .student-search-item {
@@ -1201,10 +1150,6 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     .stats-grid {
         grid-template-columns: repeat(3, 1fr);
     }
-    .stats-grid .stat-card:nth-child(4),
-    .stats-grid .stat-card:nth-child(5) {
-        /* Allow 5 items to wrap nicely */
-    }
     .lateness-header {
         flex-direction: column;
         align-items: stretch;
@@ -1214,14 +1159,5 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     }
     .lateness-input-row select {
         flex: 1;
-    }
-    .login-card {
-        padding: 28px 20px;
-    }
-    .login-input-group {
-        flex-direction: column;
-    }
-    .login-input-group button {
-        width: 100%;
     }
 }
