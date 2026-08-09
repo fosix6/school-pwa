@@ -498,15 +498,17 @@ async function capturePhoto() {
         statusEl.textContent = '❌ Gagal memproses: ' + error.message;
     }
 }
+// ========================================
+// CORE FACE PROCESSING - COMPLETELY DECOUPLED FROM CLASS
+// ========================================
 
-// Process face with descriptor - COMPLETELY FIXED
 async function processFaceWithDescriptor(photoData, descriptor, detection) {
     const statusEl = els.faceStatusMsg;
     
     try {
         const status = els.faceStatus.value;
         const date = els.faceDate.value || new Date().toISOString().split('T')[0];
-        const kelas = els.classSelector.value;
+        const kelas = els.classSelector.value; // ONLY used for marking attendance, NOT for filtering students
         
         if (!date) {
             statusEl.className = 'status-msg error';
@@ -514,9 +516,9 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             return;
         }
         
-        statusEl.textContent = '🔍 Membandingkan dengan database semua siswa...';
+        statusEl.textContent = '📥 Memuat semua siswa dari database...';
         
-        // STEP 1: Get ALL students from server
+        // ===== STEP 1: Get ALL students (NO CLASS FILTER) =====
         let allStudents = [];
         try {
             const data = await apiCall('getAllStudents', {}, false);
@@ -535,12 +537,14 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             return;
         }
         
-        // STEP 2: Compare with stored descriptors
+        // ===== STEP 2: Compare with stored face descriptors =====
+        statusEl.textContent = '🔍 Membandingkan dengan database wajah...';
+        
         const results = [];
         for (const [nis, data] of Object.entries(state.faceDescriptors)) {
-            // Check if this NIS exists in allStudents
+            // Check if this NIS exists in allStudents (should always be true)
             const student = allStudents.find(s => s[0].toString() === nis);
-            if (!student) continue; // Skip if student not found
+            if (!student) continue;
             
             const distance = faceapi.euclideanDistance(descriptor, data.descriptor);
             const similarity = Math.max(0, 1 - distance);
@@ -555,8 +559,8 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         
         results.sort((a, b) => b.similarity - a.similarity);
         
+        // ===== STEP 3: Check if we have a match =====
         if (results.length > 0 && results[0].similarity > FACE_MATCH_THRESHOLD) {
-            // MATCH FOUND
             const match = results[0];
             console.log('✅ Face match:', match.name, 'similarity:', match.similarity);
             
@@ -577,6 +581,7 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
                     const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
                     statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
                     
+                    // Refresh the class view if a class is selected
                     if (kelas) {
                         await loadStudents(kelas, date);
                     }
@@ -592,7 +597,7 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
                 statusEl.textContent = '⏹️ Dibatalkan';
             }
         } else {
-            // NO MATCH - Ask to register using ALL students
+            // ===== NO MATCH - Ask to register =====
             statusEl.className = 'status-msg';
             statusEl.textContent = '👤 Wajah tidak dikenali. Apakah Anda ingin mendaftar?';
             
@@ -624,24 +629,275 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
     }
 }
 
-// Get ALL students from the server (not filtered by class)
-async function getAllStudents() {
+// ========================================
+// REGISTER FACE - COMPLETELY DECOUPLED FROM CLASS
+// ========================================
+
+async function registerFace(nis, photoData, descriptor, date, status, kelas) {
+    const statusEl = els.faceStatusMsg;
+    
     try {
-        // This gets all students from the Students sheet
-        const data = await apiCall('getAllStudents', {}, false);
-        return data.students || [];
+        statusEl.textContent = '📝 Mendaftarkan wajah...';
+        
+        const descriptorArray = Array.from(descriptor);
+        
+        const result = await apiCall('registerFace', {
+            nis: nis,
+            descriptor: descriptorArray,
+            photoData: photoData
+        }, false, 'POST');
+        
+        if (result.success) {
+            // Get ALL students to find name
+            const data = await apiCall('getAllStudents', {}, false);
+            const allStudents = data.students || [];
+            const student = allStudents.find(s => s[0].toString() === nis);
+            
+            state.faceDescriptors[nis] = {
+                name: student ? student[1] : nis,
+                descriptor: descriptor
+            };
+            
+            statusEl.className = 'status-msg success';
+            statusEl.textContent = `✅ Wajah terdaftar untuk ${student ? student[1] : nis}`;
+            
+            // Mark attendance
+            statusEl.textContent = '📝 Merekam absen...';
+            
+            const attResult = await apiCall('markFaceAttendance', {
+                nis: nis,
+                date: date,
+                status: status,
+                kelas: kelas || ''
+            }, false, 'POST');
+            
+            if (attResult.success) {
+                statusEl.className = 'status-msg success';
+                const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
+                statusEl.textContent = `✅ ${statusLabel} untuk ${attResult.student.name}`;
+                
+                if (kelas) {
+                    await loadStudents(kelas, date);
+                }
+                
+                showToast('✅ Absen berhasil', `${attResult.student.name} - ${statusLabel}`, null, false);
+                setTimeout(() => hideToastDelayed(2000), 500);
+            } else {
+                statusEl.className = 'status-msg error';
+                statusEl.textContent = `❌ Gagal absen: ${attResult.error || 'Unknown error'}`;
+            }
+        } else {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = `❌ Gagal mendaftar: ${result.error || 'Unknown error'}`;
+            console.error('Register failed:', result);
+        }
     } catch (error) {
-        console.warn('⚠️ Failed to get all students:', error);
-        // Fallback to current state students
-        return state.students || [];
+        console.error('Register error:', error);
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
     }
 }
 
 // ========================================
-// CONFIRMATION DIALOGS
+// SHOW REGISTRATION PROMPT - FIXED
 // ========================================
 
-// Show face confirmation dialog with match details
+function showRegistrationPrompt(photoData) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000001;
+            padding: 20px;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 16px;
+            padding: 28px 24px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+        `;
+        
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 4px 0;font-size:20px;">👤 Wajah Tidak Dikenali</h3>
+            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah Anda ingin mendaftarkan wajah ini?</p>
+            <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:20px;">
+                <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;display:block;" />
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button id="reg-prompt-cancel" style="
+                    flex:1;
+                    padding:14px;
+                    border:2px solid #ddd;
+                    border-radius:10px;
+                    background:transparent;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    color:#666;
+                    transition:background 0.15s;
+                ">✕ Batal</button>
+                <button id="reg-prompt-register" style="
+                    flex:1;
+                    padding:14px;
+                    border:none;
+                    border-radius:10px;
+                    background:#1a6bb0;
+                    color:white;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    transition:background 0.15s;
+                ">📝 Daftar</button>
+            </div>
+        `;
+        
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        const cancelBtn = dialog.querySelector('#reg-prompt-cancel');
+        const registerBtn = dialog.querySelector('#reg-prompt-register');
+        
+        cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = '#f5f5f5');
+        cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'transparent');
+        registerBtn.addEventListener('mouseenter', () => registerBtn.style.background = '#155a96');
+        registerBtn.addEventListener('mouseleave', () => registerBtn.style.background = '#1a6bb0');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(false);
+        });
+        
+        registerBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(true);
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+                resolve(false);
+            }
+        });
+    });
+}
+
+// ========================================
+// SHOW STUDENT SELECTION - USES ALL STUDENTS
+// ========================================
+
+function showStudentSelectionDialog(students) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000001;
+            padding: 20px;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+        `;
+        
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 4px 0;font-size:18px;">👤 Pilih Nama Anda</h3>
+            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Pilih nama untuk mendaftarkan wajah ini.</p>
+            <input type="text" id="student-select-search" placeholder="Cari nama..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px;" />
+            <div id="student-select-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
+            <button id="student-select-cancel" style="margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;cursor:pointer;width:100%;font-size:15px;">✕ Batal</button>
+        `;
+        
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        const listEl = dialog.querySelector('#student-select-list');
+        const searchEl = dialog.querySelector('#student-select-search');
+        const cancelBtn = dialog.querySelector('#student-select-cancel');
+        
+        function renderList(filter = '') {
+            // Sort students by name
+            const sorted = [...students].sort((a, b) => a[1].localeCompare(b[1]));
+            
+            const filtered = filter 
+                ? sorted.filter(s => s[1].toLowerCase().includes(filter.toLowerCase()) || s[0].toString().includes(filter))
+                : sorted;
+            
+            if (!filtered.length) {
+                listEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px 0;">Tidak ada siswa yang cocok</p>';
+                return;
+            }
+            
+            listEl.innerHTML = filtered.map(s => `
+                <button data-nis="${s[0]}" style="
+                    padding:10px 14px;
+                    border:1px solid #eee;
+                    border-radius:8px;
+                    background:white;
+                    cursor:pointer;
+                    text-align:left;
+                    font-size:14px;
+                    transition:background 0.15s;
+                    width:100%;
+                ">
+                    <strong>${escapeHtml(s[1])}</strong>
+                    <span style="color:#999;font-size:12px;"> #${s[0]}</span>
+                    <span style="color:#999;font-size:11px;display:block;">${escapeHtml(s[2] || '')} ${escapeHtml(s[3] || '')}</span>
+                </button>
+            `).join('');
+            
+            listEl.querySelectorAll('button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.body.removeChild(overlay);
+                    resolve(btn.dataset.nis);
+                });
+                btn.addEventListener('mouseenter', () => btn.style.background = '#f0f0f0');
+                btn.addEventListener('mouseleave', () => btn.style.background = 'white');
+            });
+        }
+        
+        searchEl.addEventListener('input', () => renderList(searchEl.value));
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(null);
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+                resolve(null);
+            }
+        });
+        
+        renderList();
+    });
+}
+
+// ========================================
+// SHOW FACE CONFIRMATION DIALOG
+// ========================================
+
 function showFaceConfirmationDialog(photoData, name, nis, similarity) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -761,341 +1017,10 @@ function showFaceConfirmationDialog(photoData, name, nis, similarity) {
     });
 }
 
-// Show registration prompt
-function showRegistrationPrompt(photoData) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000001;
-            padding: 20px;
-        `;
-        
-        const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background: white;
-            border-radius: 16px;
-            padding: 28px 24px;
-            max-width: 400px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
-        `;
-        
-        dialog.innerHTML = `
-            <h3 style="margin:0 0 4px 0;font-size:20px;">👤 Wajah Tidak Dikenali</h3>
-            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah Anda ingin mendaftarkan wajah ini?</p>
-            <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:20px;">
-                <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;display:block;" />
-            </div>
-            <div style="display:flex;gap:10px;">
-                <button id="reg-prompt-cancel" style="
-                    flex:1;
-                    padding:14px;
-                    border:2px solid #ddd;
-                    border-radius:10px;
-                    background:transparent;
-                    cursor:pointer;
-                    font-weight:600;
-                    font-size:15px;
-                    color:#666;
-                ">✕ Cancel</button>
-                <button id="reg-prompt-register" style="
-                    flex:1;
-                    padding:14px;
-                    border:none;
-                    border-radius:10px;
-                    background:#1a6bb0;
-                    color:white;
-                    cursor:pointer;
-                    font-weight:600;
-                    font-size:15px;
-                ">📝 Register</button>
-            </div>
-        `;
-        
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        
-        dialog.querySelector('#reg-prompt-cancel').addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(false);
-        });
-        
-        dialog.querySelector('#reg-prompt-register').addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(true);
-        });
-        
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                document.body.removeChild(overlay);
-                resolve(false);
-            }
-        });
-    });
-}
+// ========================================
+// MANUAL FACE REGISTRATION - DECOUPLED
+// ========================================
 
-function showRegistrationPrompt(photoData) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000001;
-            padding: 20px;
-        `;
-        
-        const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background: white;
-            border-radius: 16px;
-            padding: 28px 24px;
-            max-width: 400px;
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
-        `;
-        
-        dialog.innerHTML = `
-            <h3 style="margin:0 0 4px 0;font-size:20px;">👤 Wajah Tidak Dikenali</h3>
-            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah Anda ingin mendaftarkan wajah ini?</p>
-            <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:20px;">
-                <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;display:block;" />
-            </div>
-            <div style="display:flex;gap:10px;">
-                <button id="reg-prompt-cancel" style="
-                    flex:1;
-                    padding:14px;
-                    border:2px solid #ddd;
-                    border-radius:10px;
-                    background:transparent;
-                    cursor:pointer;
-                    font-weight:600;
-                    font-size:15px;
-                    color:#666;
-                    transition:background 0.15s;
-                ">✕ Batal</button>
-                <button id="reg-prompt-register" style="
-                    flex:1;
-                    padding:14px;
-                    border:none;
-                    border-radius:10px;
-                    background:#1a6bb0;
-                    color:white;
-                    cursor:pointer;
-                    font-weight:600;
-                    font-size:15px;
-                    transition:background 0.15s;
-                ">📝 Daftar</button>
-            </div>
-        `;
-        
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        
-        const cancelBtn = dialog.querySelector('#reg-prompt-cancel');
-        const registerBtn = dialog.querySelector('#reg-prompt-register');
-        
-        cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = '#f5f5f5');
-        cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'transparent');
-        registerBtn.addEventListener('mouseenter', () => registerBtn.style.background = '#155a96');
-        registerBtn.addEventListener('mouseleave', () => registerBtn.style.background = '#1a6bb0');
-        
-        cancelBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(false);
-        });
-        
-        registerBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(true);
-        });
-        
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                document.body.removeChild(overlay);
-                resolve(false);
-            }
-        });
-    });
-}
-
-// Show student selection dialog - FIXED (properly resolves)
-function showStudentSelectionDialog(students) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.7);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000001;
-            padding: 20px;
-        `;
-        
-        const dialog = document.createElement('div');
-        dialog.style.cssText = `
-            background: white;
-            border-radius: 16px;
-            padding: 24px;
-            max-width: 400px;
-            width: 100%;
-            max-height: 80vh;
-            overflow-y: auto;
-            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
-        `;
-        
-        dialog.innerHTML = `
-            <h3 style="margin:0 0 4px 0;font-size:18px;">👤 Pilih Nama Anda</h3>
-            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Pilih nama untuk mendaftarkan wajah ini.</p>
-            <input type="text" id="student-select-search" placeholder="Cari nama..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px;" />
-            <div id="student-select-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
-            <button id="student-select-cancel" style="margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;cursor:pointer;width:100%;font-size:15px;">✕ Batal</button>
-        `;
-        
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        
-        const listEl = dialog.querySelector('#student-select-list');
-        const searchEl = dialog.querySelector('#student-select-search');
-        const cancelBtn = dialog.querySelector('#student-select-cancel');
-        
-        function renderList(filter = '') {
-            const sorted = [...students].sort((a, b) => a[1].localeCompare(b[1]));
-            
-            const filtered = filter 
-                ? sorted.filter(s => s[1].toLowerCase().includes(filter.toLowerCase()) || s[0].toString().includes(filter))
-                : sorted;
-            
-            if (!filtered.length) {
-                listEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px 0;">Tidak ada siswa yang cocok</p>';
-                return;
-            }
-            
-            listEl.innerHTML = filtered.map(s => `
-                <button data-nis="${s[0]}" style="
-                    padding:10px 14px;
-                    border:1px solid #eee;
-                    border-radius:8px;
-                    background:white;
-                    cursor:pointer;
-                    text-align:left;
-                    font-size:14px;
-                    transition:background 0.15s;
-                    width:100%;
-                ">
-                    <strong>${escapeHtml(s[1])}</strong>
-                    <span style="color:#999;font-size:12px;"> #${s[0]}</span>
-                    <span style="color:#999;font-size:11px;display:block;">${escapeHtml(s[2] || '')} ${escapeHtml(s[3] || '')}</span>
-                </button>
-            `).join('');
-            
-            listEl.querySelectorAll('button').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    document.body.removeChild(overlay);
-                    resolve(btn.dataset.nis);
-                });
-                btn.addEventListener('mouseenter', () => btn.style.background = '#f0f0f0');
-                btn.addEventListener('mouseleave', () => btn.style.background = 'white');
-            });
-        }
-        
-        searchEl.addEventListener('input', () => renderList(searchEl.value));
-        cancelBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(null);
-        });
-        
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                document.body.removeChild(overlay);
-                resolve(null);
-            }
-        });
-        
-        renderList();
-    });
-}
-
-// Register face - COMPLETELY FIXED
-async function registerFace(nis, photoData, descriptor, date, status, kelas) {
-    const statusEl = els.faceStatusMsg;
-    
-    try {
-        statusEl.textContent = '📝 Mendaftarkan wajah...';
-        
-        const descriptorArray = Array.from(descriptor);
-        
-        const result = await apiCall('registerFace', {
-            nis: nis,
-            descriptor: descriptorArray,
-            photoData: photoData
-        }, false, 'POST');
-        
-        if (result.success) {
-            // Get ALL students to find name
-            const data = await apiCall('getAllStudents', {}, false);
-            const allStudents = data.students || [];
-            const student = allStudents.find(s => s[0].toString() === nis);
-            
-            state.faceDescriptors[nis] = {
-                name: student ? student[1] : nis,
-                descriptor: descriptor
-            };
-            
-            statusEl.className = 'status-msg success';
-            statusEl.textContent = `✅ Wajah terdaftar untuk ${student ? student[1] : nis}`;
-            
-            // Mark attendance
-            statusEl.textContent = '📝 Merekam absen...';
-            
-            const attResult = await apiCall('markFaceAttendance', {
-                nis: nis,
-                date: date,
-                status: status,
-                kelas: kelas || ''
-            }, false, 'POST');
-            
-            if (attResult.success) {
-                statusEl.className = 'status-msg success';
-                const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
-                statusEl.textContent = `✅ ${statusLabel} untuk ${attResult.student.name}`;
-                
-                if (kelas) {
-                    await loadStudents(kelas, date);
-                }
-                
-                showToast('✅ Absen berhasil', `${attResult.student.name} - ${statusLabel}`, null, false);
-                setTimeout(() => hideToastDelayed(2000), 500);
-            } else {
-                statusEl.className = 'status-msg error';
-                statusEl.textContent = `❌ Gagal absen: ${attResult.error || 'Unknown error'}`;
-            }
-        } else {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = `❌ Gagal mendaftar: ${result.error || 'Unknown error'}`;
-            console.error('Register failed:', result);
-        }
-    } catch (error) {
-        console.error('Register error:', error);
-        statusEl.className = 'status-msg error';
-        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
-    }
-}
-
-// Manual face registration (from register button)
 async function registerFaceManually() {
     const nis = els.faceRegisterNis.value.trim();
     const msgEl = els.faceRegisterMsg;
@@ -1112,18 +1037,19 @@ async function registerFaceManually() {
     msgEl.textContent = '🔍 Memeriksa siswa...';
     
     try {
-        const students = state.students || [];
-        const student = students.find(s => s[0].toString() === nis);
+        // Get ALL students from server
+        const data = await apiCall('getAllStudents', {}, false);
+        const allStudents = data.students || [];
+        const student = allStudents.find(s => s[0].toString() === nis);
         
         if (!student) {
             msgEl.className = 'status-msg error';
-            msgEl.textContent = '❌ Siswa dengan NIS tersebut tidak ditemukan di kelas ini';
+            msgEl.textContent = '❌ Siswa dengan NIS tersebut tidak ditemukan di database';
             return;
         }
         
         msgEl.textContent = '📸 Buka kamera untuk mengambil foto...';
         
-        // Open camera for registration
         await openCameraForRegistration(nis);
         
     } catch (error) {
@@ -1219,7 +1145,11 @@ async function completeFaceRegistration(nis, result) {
         }, false, 'POST');
         
         if (registerResult.success) {
-            const student = state.students.find(s => s[0].toString() === nis);
+            // Get ALL students to find name
+            const data = await apiCall('getAllStudents', {}, false);
+            const allStudents = data.students || [];
+            const student = allStudents.find(s => s[0].toString() === nis);
+            
             state.faceDescriptors[nis] = {
                 name: student ? student[1] : nis,
                 descriptor: descriptor
@@ -1239,7 +1169,6 @@ async function completeFaceRegistration(nis, result) {
     
     setTimeout(() => closeCamera(), 1000);
 }
-
 // ========================================
 // REST OF APP - TAB SWITCHING, LOAD CLASSES, STUDENTS, ETC
 // ========================================
