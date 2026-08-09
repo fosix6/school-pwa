@@ -116,7 +116,7 @@ async function isFingerprintSupported() {
     }
 }
 
-// MAIN FINGERPRINT SCAN FUNCTION - FIXED FLOW
+// MAIN FINGERPRINT SCAN FUNCTION - ALWAYS ASK FOR FINGERPRINT FIRST
 async function scanBiometric() {
     const statusEl = els.biometricStatusMsg;
     const scanBtn = els.biometricScanBtn;
@@ -144,7 +144,7 @@ async function scanBiometric() {
             return;
         }
         
-        // 3. Get status and date FIRST (before fingerprint)
+        // 3. Get status and date
         const status = els.biometricStatus.value;
         const date = els.biometricDate.value || new Date().toISOString().split('T')[0];
         
@@ -174,40 +174,40 @@ async function scanBiometric() {
         const deviceId = getDeviceFingerprintId();
         const rpId = getRpId();
         
-        // 4. Check if this device is already registered
-        let mappingResult;
+        // 4. STEP 1: ALWAYS TRY FINGERPRINT VERIFICATION FIRST
+        statusEl.textContent = '🖐️ Tempelkan jari di sensor...';
+        
         try {
-            mappingResult = await apiCall('getFingerprintMapping', { fingerprintId: deviceId }, false);
-        } catch (e) {
-            mappingResult = { success: false, nis: null };
-        }
-        
-        const isRegistered = mappingResult.success !== false && mappingResult.nis;
-        
-        // 5. FIRST - Try fingerprint verification if registered
-        if (isRegistered) {
-            // === REGISTERED: VERIFY FINGERPRINT FIRST ===
-            statusEl.textContent = '🖐️ Tempelkan jari di sensor...';
+            const challenge = generateChallenge();
             
-            try {
-                const challenge = generateChallenge();
+            const options = {
+                publicKey: {
+                    challenge: challenge,
+                    rpId: rpId,
+                    userVerification: 'required',
+                    timeout: 60000,
+                }
+            };
+            
+            // This WILL trigger the fingerprint prompt
+            const credential = await navigator.credentials.get(options);
+            
+            if (credential && credential.id) {
+                // FINGERPRINT MATCHED! Now check if this device is registered
+                statusEl.textContent = '✅ Sidik jari cocok! Memeriksa registrasi...';
                 
-                const options = {
-                    publicKey: {
-                        challenge: challenge,
-                        rpId: rpId,
-                        userVerification: 'required',
-                        timeout: 60000,
-                    }
-                };
+                // Check if this device is registered
+                let mappingResult;
+                try {
+                    mappingResult = await apiCall('getFingerprintMapping', { fingerprintId: deviceId }, false);
+                } catch (e) {
+                    mappingResult = { success: false, nis: null };
+                }
                 
-                // This triggers fingerprint prompt
-                const credential = await navigator.credentials.get(options);
-                
-                if (credential && credential.id) {
-                    // FINGERPRINT MATCHED! Mark attendance with selected status
+                if (mappingResult.success !== false && mappingResult.nis) {
+                    // DEVICE IS REGISTERED - Mark attendance immediately
                     const nis = mappingResult.nis;
-                    statusEl.textContent = '✅ Sidik jari cocok! Merekam absen...';
+                    statusEl.textContent = '📝 Merekam absen...';
                     
                     const result = await apiCall('markBiometricAttendance', {
                         nis: nis,
@@ -230,41 +230,59 @@ async function scanBiometric() {
                         statusEl.textContent = `❌ Gagal absen: ${result.error || 'Unknown error'}`;
                     }
                 } else {
-                    statusEl.className = 'status-msg error';
-                    statusEl.textContent = '❌ Verifikasi gagal. Silakan coba lagi.';
-                }
-            } catch (webauthnError) {
-                console.error('Fingerprint error:', webauthnError);
-                if (webauthnError.name === 'NotAllowedError') {
-                    statusEl.className = 'status-msg error';
-                    statusEl.textContent = '❌ Verifikasi dibatalkan. Silakan coba lagi.';
-                } else {
-                    // Fallback: Ask for manual selection
+                    // DEVICE NOT REGISTERED - Ask for name
                     statusEl.className = 'status-msg';
-                    statusEl.textContent = '⚠️ Verifikasi gagal. Pilih nama Anda...';
+                    statusEl.textContent = '👤 Sidik jari belum terdaftar. Pilih nama Anda...';
                     
                     const selectedNis = await showStudentSelectionDialog(students);
+                    
                     if (selectedNis) {
-                        await registerAndMarkAttendance(selectedNis, date, status, kelas, deviceId, rpId, statusEl);
+                        // Register the fingerprint
+                        await registerFingerprintOnly(selectedNis, date, status, kelas, deviceId, rpId, statusEl);
                     } else {
                         statusEl.className = 'status-msg';
                         statusEl.textContent = '⏹️ Dibatalkan';
                     }
                 }
-            }
-        } else {
-            // === NOT REGISTERED: Ask for name THEN register fingerprint ===
-            statusEl.className = 'status-msg';
-            statusEl.textContent = '👤 Sidik jari belum terdaftar. Pilih nama Anda...';
-            
-            const selectedNis = await showStudentSelectionDialog(students);
-            
-            if (selectedNis) {
-                // Now register fingerprint
-                await registerAndMarkAttendance(selectedNis, date, status, kelas, deviceId, rpId, statusEl);
             } else {
+                statusEl.className = 'status-msg error';
+                statusEl.textContent = '❌ Verifikasi gagal. Silakan coba lagi.';
+            }
+        } catch (webauthnError) {
+            console.error('Fingerprint error:', webauthnError);
+            
+            if (webauthnError.name === 'NotAllowedError') {
+                statusEl.className = 'status-msg error';
+                statusEl.textContent = '❌ Verifikasi dibatalkan. Silakan coba lagi.';
+            } else if (webauthnError.name === 'InvalidStateError') {
+                // This happens when the credential exists but there's an issue
+                // Try to recover by re-registering
                 statusEl.className = 'status-msg';
-                statusEl.textContent = '⏹️ Dibatalkan';
+                statusEl.textContent = '⚠️ Error credential. Silakan registrasi ulang...';
+                
+                // Ask for name
+                const selectedNis = await showStudentSelectionDialog(students);
+                if (selectedNis) {
+                    // First, clear the old registration
+                    await apiCall('registerBiometric', { nis: '', fingerprintId: deviceId }, false, 'POST');
+                    // Then register again
+                    await registerFingerprintOnly(selectedNis, date, status, kelas, deviceId, rpId, statusEl);
+                } else {
+                    statusEl.className = 'status-msg';
+                    statusEl.textContent = '⏹️ Dibatalkan';
+                }
+            } else {
+                // Some other error - fallback to manual
+                statusEl.className = 'status-msg';
+                statusEl.textContent = '⚠️ Verifikasi gagal. Pilih nama Anda...';
+                
+                const selectedNis = await showStudentSelectionDialog(students);
+                if (selectedNis) {
+                    await registerFingerprintOnly(selectedNis, date, status, kelas, deviceId, rpId, statusEl);
+                } else {
+                    statusEl.className = 'status-msg';
+                    statusEl.textContent = '⏹️ Dibatalkan';
+                }
             }
         }
         
@@ -277,8 +295,8 @@ async function scanBiometric() {
     }
 }
 
-// Register fingerprint and mark attendance
-async function registerAndMarkAttendance(nis, date, status, kelas, deviceId, rpId, statusEl) {
+// Register fingerprint only (without marking attendance yet)
+async function registerFingerprintOnly(nis, date, status, kelas, deviceId, rpId, statusEl) {
     try {
         // Step 1: Register fingerprint with WebAuthn
         statusEl.textContent = '🖐️ Tempelkan jari di sensor untuk registrasi...';
@@ -461,7 +479,7 @@ function showStudentSelectionDialog(students) {
     });
 }
 
-// Manual fingerprint registration (keeps the same)
+// Manual fingerprint registration
 async function registerFingerprintManually() {
     const nis = els.biometricRegisterNis.value.trim();
     const msgEl = els.biometricRegisterMsg;
