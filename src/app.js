@@ -21,6 +21,8 @@ let state = {
     currentTab: 'today',
     pendingUpdates: [],
     updateTimeout: null,
+    faceModelsLoaded: false,
+    faceDescriptors: {}, // cache: { nis: { name, descriptor } }
 };
 
 // ===== DOM REFS =====
@@ -69,8 +71,10 @@ const els = {
     faceRegisterMsg: $('face-register-msg'),
     cameraContainer: $('camera-container'),
     cameraPreview: $('camera-preview'),
+    faceOverlay: $('face-overlay'),
     capturePhotoBtn: $('capture-photo-btn'),
     closeCameraBtn: $('close-camera-btn'),
+    modelStatus: $('model-status'),
 };
 
 // ===== API CACHE =====
@@ -78,524 +82,15 @@ const apiCache = new Map();
 const studentListCache = new Map();
 
 // ========================================
-// FACE RECOGNITION SYSTEM
+// FACE RECOGNITION - face-api.js
 // ========================================
 
 let cameraStream = null;
 let isCameraOpen = false;
+let detectionInterval = null;
 
-// Get device ID
-function getDeviceId() {
-    let id = localStorage.getItem('device_face_id');
-    if (!id) {
-        id = 'face_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-        localStorage.setItem('device_face_id', id);
-    }
-    return id;
-}
-
-// Check if camera is available
-async function checkCamera() {
-    try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        return devices.some(device => device.kind === 'videoinput');
-    } catch (e) {
-        return false;
-    }
-}
-
-// Open camera
-async function openCamera() {
-    if (isCameraOpen) {
-        closeCamera();
-        return;
-    }
-    
-    try {
-        const statusEl = els.faceStatusMsg;
-        statusEl.style.display = 'block';
-        statusEl.className = 'status-msg';
-        statusEl.textContent = '📸 Membuka kamera...';
-        
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: 'user',
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            },
-            audio: false
-        });
-        
-        els.cameraPreview.srcObject = cameraStream;
-        await els.cameraPreview.play();
-        
-        els.cameraContainer.style.display = 'block';
-        isCameraOpen = true;
-        
-        els.faceScanBtn.innerHTML = '<span class="camera-icon">📷</span> Tutup Kamera';
-        els.faceScanBtn.style.background = '#b13e3e';
-        
-        statusEl.style.display = 'none';
-        
-    } catch (error) {
-        console.error('Camera error:', error);
-        const statusEl = els.faceStatusMsg;
-        statusEl.style.display = 'block';
-        statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Gagal membuka kamera: ' + (error.message || 'Izin kamera ditolak');
-    }
-}
-
-// Close camera
-function closeCamera() {
-    if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-        cameraStream = null;
-    }
-    els.cameraContainer.style.display = 'none';
-    isCameraOpen = false;
-    
-    els.faceScanBtn.innerHTML = '<span class="camera-icon">📸</span> Buka Kamera';
-    els.faceScanBtn.style.background = '';
-}
-
-// Capture photo from camera
-async function capturePhoto() {
-    if (!isCameraOpen || !els.cameraPreview.srcObject) {
-        const statusEl = els.faceStatusMsg;
-        statusEl.style.display = 'block';
-        statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Kamera tidak terbuka';
-        return;
-    }
-    
-    try {
-        const statusEl = els.faceStatusMsg;
-        statusEl.style.display = 'block';
-        statusEl.className = 'status-msg';
-        statusEl.textContent = '📸 Mengambil foto...';
-        
-        const canvas = document.createElement('canvas');
-        canvas.width = els.cameraPreview.videoWidth || 640;
-        canvas.height = els.cameraPreview.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(els.cameraPreview, 0, 0, canvas.width, canvas.height);
-        
-        const photoData = canvas.toDataURL('image/jpeg', 0.8);
-        
-        await processFacePhoto(photoData);
-        
-    } catch (error) {
-        console.error('Capture error:', error);
-        const statusEl = els.faceStatusMsg;
-        statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Gagal mengambil foto: ' + error.message;
-    }
-}
-
-// Process face photo for attendance
-async function processFacePhoto(photoData) {
-    const statusEl = els.faceStatusMsg;
-    const scanBtn = els.faceScanBtn;
-    
-    try {
-        const status = els.faceStatus.value;
-        const date = els.faceDate.value || new Date().toISOString().split('T')[0];
-        const kelas = els.classSelector.value;
-        
-        if (!date) {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Silakan pilih tanggal';
-            return;
-        }
-        
-        if (!kelas) {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Silakan pilih kelas terlebih dahulu di tab "Hari Ini"';
-            return;
-        }
-        
-        const students = state.students || [];
-        if (!students.length) {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Tidak ada siswa di kelas ini';
-            return;
-        }
-        
-        const deviceId = getDeviceId();
-        
-        // Check if this device already has a registered face
-        let mappingResult;
-        try {
-            mappingResult = await apiCall('getFaceMapping', { deviceId: deviceId }, false);
-        } catch (e) {
-            mappingResult = { success: false, nis: null };
-        }
-        
-        if (mappingResult.success !== false && mappingResult.nis) {
-            // Already registered - verify with photo
-            statusEl.textContent = '🔍 Memeriksa wajah...';
-            
-            const student = students.find(s => s[0].toString() === mappingResult.nis);
-            if (!student) {
-                statusEl.className = 'status-msg error';
-                statusEl.textContent = '❌ Siswa tidak ditemukan di kelas ini';
-                return;
-            }
-            
-            // Show confirmation dialog
-            const confirmed = await showFaceConfirmationDialog(photoData, student[1], student[0]);
-            
-            if (confirmed) {
-                statusEl.textContent = '✅ Wajah cocok! Merekam absen...';
-                
-                const result = await apiCall('markFaceAttendance', {
-                    nis: mappingResult.nis,
-                    date: date,
-                    status: status,
-                    kelas: kelas
-                }, false, 'POST');
-                
-                if (result.success) {
-                    statusEl.className = 'status-msg success';
-                    const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
-                    statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
-                    
-                    await loadStudents(kelas, date);
-                    
-                    showToast('✅ Absen berhasil', `${result.student.name} - ${statusLabel}`, null, false);
-                    setTimeout(() => hideToastDelayed(2000), 500);
-                } else {
-                    statusEl.className = 'status-msg error';
-                    statusEl.textContent = `❌ Gagal absen: ${result.error || 'Unknown error'}`;
-                }
-            } else {
-                statusEl.className = 'status-msg';
-                statusEl.textContent = '⏹️ Dibatalkan';
-            }
-        } else {
-            // Not registered - ask user to select name
-            statusEl.textContent = '👤 Wajah belum terdaftar. Pilih nama Anda...';
-            
-            const selectedNis = await showFaceRegistrationDialog(photoData, students);
-            
-            if (selectedNis) {
-                // Register face
-                statusEl.textContent = '📝 Mendaftarkan wajah...';
-                
-                const registerResult = await apiCall('registerFace', {
-                    nis: selectedNis,
-                    deviceId: deviceId,
-                    photoData: photoData
-                }, false, 'POST');
-                
-                if (registerResult.success) {
-                    const student = students.find(s => s[0].toString() === selectedNis);
-                    statusEl.className = 'status-msg success';
-                    statusEl.textContent = `✅ Wajah terdaftar untuk ${student?.[1] || selectedNis}`;
-                    
-                    // Mark attendance
-                    statusEl.textContent = '📝 Merekam absen...';
-                    
-                    const result = await apiCall('markFaceAttendance', {
-                        nis: selectedNis,
-                        date: date,
-                        status: status,
-                        kelas: kelas
-                    }, false, 'POST');
-                    
-                    if (result.success) {
-                        statusEl.className = 'status-msg success';
-                        const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
-                        statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
-                        
-                        await loadStudents(kelas, date);
-                        
-                        showToast('✅ Absen berhasil', `${result.student.name} - ${statusLabel}`, null, false);
-                        setTimeout(() => hideToastDelayed(2000), 500);
-                    } else {
-                        statusEl.className = 'status-msg error';
-                        statusEl.textContent = `❌ Gagal absen: ${result.error || 'Unknown error'}`;
-                    }
-                } else {
-                    statusEl.className = 'status-msg error';
-                    statusEl.textContent = `❌ Gagal mendaftar: ${registerResult.error || 'Unknown error'}`;
-                }
-            } else {
-                statusEl.className = 'status-msg';
-                statusEl.textContent = '⏹️ Dibatalkan';
-            }
-        }
-        
-        // Close camera after processing
-        setTimeout(() => closeCamera(), 1500);
-        
-    } catch (error) {
-        console.error('Face processing error:', error);
-        statusEl.className = 'status-msg error';
-        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
-    }
-}
-
-// Show face confirmation dialog
-function showFaceConfirmationDialog(photoData, name, nis) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'face-confirm-overlay';
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000001;
-            padding: 20px;
-        `;
-        
-        const dialog = document.createElement('div');
-        dialog.className = 'face-confirm-dialog';
-        dialog.innerHTML = `
-            <h3 style="margin:0 0 8px 0;">📸 Verifikasi Wajah</h3>
-            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah ini wajah Anda?</p>
-            <img src="${photoData}" />
-            <p class="student-name">${name}</p>
-            <p class="student-nis">NIS: ${nis}</p>
-            <div class="face-confirm-buttons">
-                <button class="btn-no" id="face-confirm-no">Bukan Saya</button>
-                <button class="btn-yes" id="face-confirm-yes">✅ Ya, Saya</button>
-            </div>
-        `;
-        
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        
-        dialog.querySelector('#face-confirm-yes').addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(true);
-        });
-        
-        dialog.querySelector('#face-confirm-no').addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(false);
-        });
-        
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                document.body.removeChild(overlay);
-                resolve(false);
-            }
-        });
-    });
-}
-
-// Show face registration dialog
-function showFaceRegistrationDialog(photoData, students) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement('div');
-        overlay.className = 'student-select-overlay';
-        overlay.style.cssText = `
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000001;
-            padding: 20px;
-        `;
-        
-        const dialog = document.createElement('div');
-        dialog.className = 'student-select-dialog';
-        dialog.innerHTML = `
-            <h3>📸 Registrasi Wajah</h3>
-            <p>Pilih nama Anda untuk mendaftar wajah ini.</p>
-            <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;border-radius:8px;margin-bottom:16px;" />
-            <input type="text" id="face-register-search" placeholder="Cari nama atau NIS..." />
-            <div class="student-select-list" id="face-register-list"></div>
-            <button class="student-select-cancel" id="face-register-cancel">Batal</button>
-        `;
-        
-        overlay.appendChild(dialog);
-        document.body.appendChild(overlay);
-        
-        const listEl = dialog.querySelector('#face-register-list');
-        const searchEl = dialog.querySelector('#face-register-search');
-        const cancelBtn = dialog.querySelector('#face-register-cancel');
-        
-        function renderList(filter = '') {
-            const filtered = filter 
-                ? students.filter(s => s[1].toLowerCase().includes(filter.toLowerCase()) || s[0].toString().includes(filter))
-                : students;
-            
-            if (!filtered.length) {
-                listEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px 0;">Tidak ada siswa yang cocok</p>';
-                return;
-            }
-            
-            listEl.innerHTML = filtered.map(s => `
-                <button data-nis="${s[0]}">
-                    ${s[1]} <span class="nis-label">#${s[0]}</span>
-                </button>
-            `).join('');
-            
-            listEl.querySelectorAll('button').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const nis = btn.dataset.nis;
-                    document.body.removeChild(overlay);
-                    resolve(nis);
-                });
-            });
-        }
-        
-        searchEl.addEventListener('input', () => renderList(searchEl.value));
-        cancelBtn.addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            resolve(null);
-        });
-        
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                document.body.removeChild(overlay);
-                resolve(null);
-            }
-        });
-        
-        renderList();
-    });
-}
-
-// Manual face registration
-async function registerFaceManually() {
-    const nis = els.faceRegisterNis.value.trim();
-    const msgEl = els.faceRegisterMsg;
-    
-    if (!nis) {
-        msgEl.style.display = 'block';
-        msgEl.className = 'status-msg error';
-        msgEl.textContent = '❌ Masukkan NIS siswa';
-        return;
-    }
-    
-    msgEl.style.display = 'block';
-    msgEl.className = 'status-msg';
-    msgEl.textContent = '🔍 Memeriksa siswa...';
-    
-    try {
-        const students = state.students || [];
-        const student = students.find(s => s[0].toString() === nis);
-        
-        if (!student) {
-            msgEl.className = 'status-msg error';
-            msgEl.textContent = '❌ Siswa dengan NIS tersebut tidak ditemukan di kelas ini';
-            return;
-        }
-        
-        msgEl.textContent = '📸 Buka kamera untuk mengambil foto...';
-        
-        // Open camera
-        await openCameraForRegistration(nis);
-        
-    } catch (error) {
-        msgEl.className = 'status-msg error';
-        msgEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
-    }
-}
-
-async function openCameraForRegistration(nis) {
-    const msgEl = els.faceRegisterMsg;
-    
-    try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-            audio: false
-        });
-        
-        els.cameraPreview.srcObject = cameraStream;
-        await els.cameraPreview.play();
-        
-        els.cameraContainer.style.display = 'block';
-        isCameraOpen = true;
-        
-        els.faceScanBtn.innerHTML = '<span class="camera-icon">📷</span> Tutup Kamera';
-        els.faceScanBtn.style.background = '#b13e3e';
-        
-        msgEl.textContent = '📸 Siap mengambil foto untuk NIS ' + nis;
-        msgEl.className = 'status-msg';
-        
-        // Auto-capture after 2 seconds
-        setTimeout(async () => {
-            if (isCameraOpen) {
-                const photoData = await capturePhotoForRegistration();
-                if (photoData) {
-                    await completeFaceRegistration(nis, photoData);
-                }
-            }
-        }, 2000);
-        
-    } catch (error) {
-        msgEl.className = 'status-msg error';
-        msgEl.textContent = '❌ Gagal membuka kamera: ' + error.message;
-    }
-}
-
-async function capturePhotoForRegistration() {
-    if (!isCameraOpen || !els.cameraPreview.srcObject) return null;
-    
-    try {
-        const canvas = document.createElement('canvas');
-        canvas.width = els.cameraPreview.videoWidth || 640;
-        canvas.height = els.cameraPreview.videoHeight || 480;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(els.cameraPreview, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', 0.8);
-    } catch (error) {
-        return null;
-    }
-}
-
-async function completeFaceRegistration(nis, photoData) {
-    const msgEl = els.faceRegisterMsg;
-    const deviceId = getDeviceId();
-    
-    try {
-        const registerResult = await apiCall('registerFace', {
-            nis: nis,
-            deviceId: deviceId,
-            photoData: photoData
-        }, false, 'POST');
-        
-        if (registerResult.success) {
-            msgEl.className = 'status-msg success';
-            msgEl.textContent = `✅ Wajah terdaftar untuk NIS ${nis}`;
-            els.faceRegisterNis.value = '';
-        } else {
-            msgEl.className = 'status-msg error';
-            msgEl.textContent = `❌ Gagal mendaftar: ${registerResult.error || 'Unknown error'}`;
-        }
-    } catch (error) {
-        msgEl.className = 'status-msg error';
-        msgEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
-    }
-    
-    setTimeout(() => closeCamera(), 1000);
-}
-
-// ========================================
-// PIKET SCHEDULE BUILDER
-// ========================================
-
-let piketState = {
-    kelas: '',
-    allStudents: [],
-    monday: [],
-    tuesday: [],
-    wednesday: [],
-    thursday: [],
-    friday: [],
-    filteredStudents: [],
-    currentSchedule: null,
-};
+// Face detection threshold
+const FACE_MATCH_THRESHOLD = 0.55;
 
 // ===== LOADING TOAST =====
 let toastTimeout = null;
@@ -675,25 +170,13 @@ function hideToastDelayed(delay = 800) {
 }
 
 // ===== HELPERS =====
-function todayISO() {
-    const d = new Date();
-    const tz = d.getTimezoneOffset() * 60000;
-    return new Date(d - tz).toISOString().slice(0, 10);
-}
-
-function formatDate(iso) {
-    if (!iso) return 'Untitled';
-    const [y, m, d] = iso.split('-').map(Number);
-    return new Date(y, m - 1, d).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
-}
-
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str == null ? '' : str;
     return div.innerHTML;
 }
 
-// ===== OPTIMIZED API CALL =====
+// ===== API CALL =====
 async function apiCall(action, params = {}, showLoadingToast = true, method = 'GET') {
     const actionLabels = {
         'getFullClassData': 'Memuat data kelas',
@@ -707,9 +190,8 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         'saveConfig': 'Menyimpan konfigurasi',
         'getStudents': 'Memuat data siswa',
         'registerFace': 'Mendaftar wajah',
-        'verifyFace': 'Verifikasi wajah',
+        'getFaceData': 'Memuat data wajah',
         'markFaceAttendance': 'Absen dengan wajah',
-        'getFaceMapping': 'Mengecek wajah',
     };
     
     const label = actionLabels[action] || `Menjalankan ${action}`;
@@ -766,70 +248,872 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         console.error('API Error:', error);
         if (showLoadingToast) {
             showToast(`Gagal: ${label}`, error.message || 'Unknown error', null, true);
-            if (!navigator.onLine) {
-                queueAction(action, params);
-                setTimeout(() => hideToastDelayed(1500), 1000);
-            } else {
-                setTimeout(() => hideToastDelayed(2000), 1500);
-            }
+            setTimeout(() => hideToastDelayed(2000), 1500);
         }
         throw error;
     }
 }
 
-// ===== QUEUE SYSTEM (Offline) =====
-function queueAction(action, params) {
-    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
-    pending.push({ action, params, timestamp: Date.now() });
-    localStorage.setItem('pending_actions', JSON.stringify(pending));
-    updatePendingCounter();
-    showToast('Disimpan offline', 'Akan disinkronkan saat online', null, false);
-    setTimeout(() => hideToastDelayed(1500), 1000);
+// ========================================
+// FACE RECOGNITION - MAIN FUNCTIONS
+// ========================================
+
+// Load face-api.js models
+async function loadFaceModels() {
+    const modelStatus = els.modelStatus;
+    modelStatus.style.display = 'block';
+    modelStatus.className = 'status-msg';
+    modelStatus.textContent = '📥 Memuat model face recognition...';
+    
+    try {
+        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+        
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        
+        state.faceModelsLoaded = true;
+        
+        modelStatus.className = 'status-msg success';
+        modelStatus.textContent = '✅ Model face recognition siap!';
+        
+        els.faceScanBtn.disabled = false;
+        els.faceScanBtn.innerHTML = '<span class="camera-icon">📸</span> Buka Kamera';
+        els.faceRegisterBtn.disabled = false;
+        
+        setTimeout(() => {
+            modelStatus.style.display = 'none';
+        }, 2000);
+        
+        await loadFaceDescriptors();
+        
+    } catch (error) {
+        console.error('❌ Failed to load face models:', error);
+        modelStatus.className = 'status-msg error';
+        modelStatus.textContent = '❌ Gagal memuat model: ' + error.message;
+    }
 }
 
-async function processPendingActions() {
-    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
-    if (!pending.length || !navigator.onLine) return;
-    
-    showToast('Menyinkronkan data offline', `Memproses ${pending.length} item...`, 10);
-    
-    const failed = [];
-    let processed = 0;
-    const total = pending.length;
-    
-    for (const item of pending) {
-        try {
-            processed++;
-            const progress = Math.round((processed / total) * 90);
-            updateToast('Menyinkronkan data offline', `Item ${processed}/${total}`, progress);
-            await apiCall(item.action, item.params, false);
-        } catch (error) {
-            failed.push(item);
+// Load face descriptors from Google Sheets
+async function loadFaceDescriptors() {
+    try {
+        const data = await apiCall('getFaceData', {}, false);
+        if (data && data.descriptors) {
+            state.faceDescriptors = {};
+            data.descriptors.forEach(item => {
+                // Name comes from the server (fetched from Students sheet)
+                state.faceDescriptors[item.nis] = {
+                    name: item.name,
+                    descriptor: new Float32Array(item.descriptor)
+                };
+            });
+            console.log('✅ Loaded', Object.keys(state.faceDescriptors).length, 'face descriptors');
         }
+    } catch (error) {
+        console.warn('⚠️ Failed to load face descriptors:', error);
+        state.faceDescriptors = {};
     }
-    
-    if (failed.length) {
-        localStorage.setItem('pending_actions', JSON.stringify(failed));
-        updateToast('⚠️ Sinkronisasi sebagian', `${failed.length} item gagal`, 100);
-        setTimeout(() => hideToastDelayed(2000), 1500);
-    } else {
-        localStorage.removeItem('pending_actions');
-        updateToast('Sinkronisasi selesai', 'Semua data tersimpan', 100);
-        setTimeout(() => hideToastDelayed(1200), 500);
-    }
-    updatePendingCounter();
 }
 
-function updatePendingCounter() {
-    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
-    const el = document.getElementById('pending-counter');
-    if (pending.length && el) {
-        el.style.display = 'block';
-        el.textContent = `${pending.length} pending`;
-    } else if (el) {
-        el.style.display = 'none';
+// Open camera
+async function openCamera() {
+    if (isCameraOpen) {
+        closeCamera();
+        return;
+    }
+    
+    if (!state.faceModelsLoaded) {
+        const statusEl = els.faceStatusMsg;
+        statusEl.style.display = 'block';
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = '❌ Model face recognition belum siap. Tunggu sebentar...';
+        return;
+    }
+    
+    try {
+        const statusEl = els.faceStatusMsg;
+        statusEl.style.display = 'block';
+        statusEl.className = 'status-msg';
+        statusEl.textContent = '📸 Membuka kamera...';
+        
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'user',
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            },
+            audio: false
+        });
+        
+        els.cameraPreview.srcObject = cameraStream;
+        await els.cameraPreview.play();
+        
+        // Set canvas size
+        const video = els.cameraPreview;
+        els.faceOverlay.width = video.videoWidth || 640;
+        els.faceOverlay.height = video.videoHeight || 480;
+        
+        els.cameraContainer.style.display = 'block';
+        isCameraOpen = true;
+        
+        els.faceScanBtn.innerHTML = '<span class="camera-icon">📷</span> Tutup Kamera';
+        els.faceScanBtn.style.background = '#b13e3e';
+        
+        statusEl.style.display = 'none';
+        
+        startFaceDetection();
+        
+        // Auto-capture after 2 seconds
+        setTimeout(() => {
+            if (isCameraOpen) {
+                capturePhoto();
+            }
+        }, 2000);
+        
+    } catch (error) {
+        console.error('Camera error:', error);
+        const statusEl = els.faceStatusMsg;
+        statusEl.style.display = 'block';
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = '❌ Gagal membuka kamera: ' + (error.message || 'Izin kamera ditolak');
     }
 }
+
+// Start face detection for preview
+function startFaceDetection() {
+    if (detectionInterval) {
+        clearInterval(detectionInterval);
+    }
+    
+    detectionInterval = setInterval(async () => {
+        if (!isCameraOpen || !els.cameraPreview.srcObject) {
+            return;
+        }
+        
+        try {
+            const detection = await faceapi.detectSingleFace(
+                els.cameraPreview,
+                new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+            );
+            
+            const canvas = els.faceOverlay;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (detection) {
+                const box = detection.box;
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(box.x, box.y, box.width, box.height);
+                
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '16px Arial';
+                ctx.fillText('✅ Wajah terdeteksi', box.x, box.y - 10);
+            } else {
+                ctx.fillStyle = '#ff0000';
+                ctx.font = '20px Arial';
+                ctx.fillText('❌ Tidak ada wajah', 20, 50);
+            }
+        } catch (e) {
+            // Ignore
+        }
+    }, 200);
+}
+
+// Close camera
+function closeCamera() {
+    if (detectionInterval) {
+        clearInterval(detectionInterval);
+        detectionInterval = null;
+    }
+    
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    
+    els.cameraContainer.style.display = 'none';
+    isCameraOpen = false;
+    
+    els.faceScanBtn.innerHTML = '<span class="camera-icon">📸</span> Buka Kamera';
+    els.faceScanBtn.style.background = '';
+    
+    const canvas = els.faceOverlay;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// Capture photo and recognize face
+async function capturePhoto() {
+    if (!isCameraOpen || !els.cameraPreview.srcObject) {
+        const statusEl = els.faceStatusMsg;
+        statusEl.style.display = 'block';
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = '❌ Kamera tidak terbuka';
+        return;
+    }
+    
+    if (!state.faceModelsLoaded) {
+        const statusEl = els.faceStatusMsg;
+        statusEl.style.display = 'block';
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = '❌ Model belum siap';
+        return;
+    }
+    
+    try {
+        const statusEl = els.faceStatusMsg;
+        statusEl.style.display = 'block';
+        statusEl.className = 'status-msg';
+        statusEl.textContent = '🧠 Memproses wajah...';
+        
+        const canvas = document.createElement('canvas');
+        const video = els.cameraPreview;
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const photoData = canvas.toDataURL('image/jpeg', 0.9);
+        
+        const detection = await faceapi.detectSingleFace(
+            canvas,
+            new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+        );
+        
+        if (!detection) {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = '❌ Tidak ada wajah terdeteksi. Coba lagi dengan posisi yang lebih jelas.';
+            return;
+        }
+        
+        const descriptor = await faceapi.computeFaceDescriptor(canvas, detection);
+        
+        await processFaceWithDescriptor(photoData, descriptor, detection);
+        
+    } catch (error) {
+        console.error('Capture error:', error);
+        const statusEl = els.faceStatusMsg;
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = '❌ Gagal memproses: ' + error.message;
+    }
+}
+
+// Process face with descriptor
+async function processFaceWithDescriptor(photoData, descriptor, detection) {
+    const statusEl = els.faceStatusMsg;
+    
+    try {
+        const status = els.faceStatus.value;
+        const date = els.faceDate.value || new Date().toISOString().split('T')[0];
+        const kelas = els.classSelector.value;
+        
+        if (!date) {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = '❌ Silakan pilih tanggal';
+            return;
+        }
+        
+        if (!kelas) {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = '❌ Silakan pilih kelas terlebih dahulu di tab "Hari Ini"';
+            return;
+        }
+        
+        const students = state.students || [];
+        if (!students.length) {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = '❌ Tidak ada siswa di kelas ini';
+            return;
+        }
+        
+        statusEl.textContent = '🔍 Membandingkan dengan database...';
+        
+        const results = [];
+        for (const [nis, data] of Object.entries(state.faceDescriptors)) {
+            const student = students.find(s => s[0].toString() === nis);
+            if (!student) continue;
+            
+            const distance = faceapi.euclideanDistance(descriptor, data.descriptor);
+            const similarity = Math.max(0, 1 - distance);
+            
+            results.push({
+                nis: nis,
+                name: data.name,
+                distance: distance,
+                similarity: similarity
+            });
+        }
+        
+        results.sort((a, b) => b.similarity - a.similarity);
+        
+        if (results.length > 0 && results[0].similarity > FACE_MATCH_THRESHOLD) {
+            const match = results[0];
+            console.log('✅ Face match:', match.name, 'similarity:', match.similarity);
+            
+            // SHOW CONFIRMATION DIALOG with name and similarity
+            const confirmed = await showFaceConfirmationDialog(photoData, match.name, match.nis, match.similarity);
+            
+            if (confirmed) {
+                statusEl.textContent = '📝 Merekam absen...';
+                
+                const result = await apiCall('markFaceAttendance', {
+                    nis: match.nis,
+                    date: date,
+                    status: status,
+                    kelas: kelas
+                }, false, 'POST');
+                
+                if (result.success) {
+                    statusEl.className = 'status-msg success';
+                    const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
+                    statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
+                    
+                    await loadStudents(kelas, date);
+                    
+                    showToast('✅ Absen berhasil', `${result.student.name} - ${statusLabel}`, null, false);
+                    setTimeout(() => hideToastDelayed(2000), 500);
+                } else {
+                    statusEl.className = 'status-msg error';
+                    statusEl.textContent = `❌ Gagal absen: ${result.error || 'Unknown error'}`;
+                }
+            } else {
+                statusEl.className = 'status-msg';
+                statusEl.textContent = '⏹️ Dibatalkan';
+            }
+        } else {
+            // No match found - ask to register
+            statusEl.className = 'status-msg';
+            statusEl.textContent = '👤 Wajah tidak dikenali. Apakah Anda ingin mendaftar?';
+            
+            const shouldRegister = await showRegistrationPrompt(photoData);
+            
+            if (shouldRegister) {
+                const selectedNis = await showStudentSelectionDialog(students);
+                if (selectedNis) {
+                    await registerFace(selectedNis, photoData, descriptor, date, status, kelas);
+                }
+            } else {
+                statusEl.className = 'status-msg';
+                statusEl.textContent = '⏹️ Dibatalkan';
+            }
+        }
+        
+        setTimeout(() => closeCamera(), 1500);
+        
+    } catch (error) {
+        console.error('Face processing error:', error);
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+    }
+}
+
+// ========================================
+// CONFIRMATION DIALOGS
+// ========================================
+
+// Show face confirmation dialog with match details
+function showFaceConfirmationDialog(photoData, name, nis, similarity) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000001;
+            padding: 20px;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 16px;
+            padding: 28px 24px;
+            max-width: 400px;
+            width: 100%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+            text-align: center;
+        `;
+        
+        const confidencePercent = Math.round(similarity * 100);
+        const confidenceColor = confidencePercent > 80 ? '#2e7d32' : confidencePercent > 60 ? '#ed6c02' : '#c62828';
+        const confidenceEmoji = confidencePercent > 80 ? '🟢' : confidencePercent > 60 ? '🟡' : '🔴';
+        
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 4px 0;font-size:20px;">📸 Face Match Found</h3>
+            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah ini wajah yang benar?</p>
+            
+            <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:16px;">
+                <img src="${photoData}" style="width:100%;max-height:200px;object-fit:cover;display:block;" />
+            </div>
+            
+            <div style="margin-bottom:16px;">
+                <div style="font-weight:700;font-size:22px;color:#1a6bb0;">${escapeHtml(name)}</div>
+                <div style="color:#999;font-size:14px;">NIS: ${nis}</div>
+            </div>
+            
+            <div style="background:#f5f5f5;border-radius:8px;padding:10px 12px;margin-bottom:20px;display:flex;align-items:center;justify-content:center;gap:8px;">
+                <span style="font-size:20px;">${confidenceEmoji}</span>
+                <span style="font-weight:600;color:${confidenceColor};">${confidencePercent}% match</span>
+                <span style="color:#999;font-size:13px;">(similarity)</span>
+            </div>
+            
+            <div style="display:flex;gap:10px;">
+                <button id="face-confirm-cancel" style="
+                    flex:1;
+                    padding:14px;
+                    border:2px solid #ddd;
+                    border-radius:10px;
+                    background:transparent;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    color:#666;
+                    transition:all 0.15s;
+                ">✕ Cancel</button>
+                <button id="face-confirm-continue" style="
+                    flex:1;
+                    padding:14px;
+                    border:none;
+                    border-radius:10px;
+                    background:#1a6bb0;
+                    color:white;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    transition:all 0.15s;
+                ">✅ Continue</button>
+            </div>
+        `;
+        
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        const cancelBtn = dialog.querySelector('#face-confirm-cancel');
+        const continueBtn = dialog.querySelector('#face-confirm-continue');
+        
+        cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = '#f5f5f5');
+        cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'transparent');
+        continueBtn.addEventListener('mouseenter', () => continueBtn.style.background = '#155a96');
+        continueBtn.addEventListener('mouseleave', () => continueBtn.style.background = '#1a6bb0');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(false);
+        });
+        
+        continueBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(true);
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+                resolve(false);
+            }
+        });
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.body.removeChild(overlay);
+                resolve(true);
+            }
+            if (e.key === 'Escape') {
+                document.body.removeChild(overlay);
+                resolve(false);
+            }
+        }, { once: true });
+    });
+}
+
+// Show registration prompt
+function showRegistrationPrompt(photoData) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000001;
+            padding: 20px;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 16px;
+            padding: 28px 24px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+        `;
+        
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 4px 0;font-size:20px;">👤 Wajah Tidak Dikenali</h3>
+            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah Anda ingin mendaftarkan wajah ini?</p>
+            <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:20px;">
+                <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;display:block;" />
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button id="reg-prompt-cancel" style="
+                    flex:1;
+                    padding:14px;
+                    border:2px solid #ddd;
+                    border-radius:10px;
+                    background:transparent;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    color:#666;
+                ">✕ Cancel</button>
+                <button id="reg-prompt-register" style="
+                    flex:1;
+                    padding:14px;
+                    border:none;
+                    border-radius:10px;
+                    background:#1a6bb0;
+                    color:white;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                ">📝 Register</button>
+            </div>
+        `;
+        
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        dialog.querySelector('#reg-prompt-cancel').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(false);
+        });
+        
+        dialog.querySelector('#reg-prompt-register').addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(true);
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+                resolve(false);
+            }
+        });
+    });
+}
+
+// Show student selection dialog
+function showStudentSelectionDialog(students) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000001;
+            padding: 20px;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            max-width: 400px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+        `;
+        
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 4px 0;font-size:18px;">👤 Pilih Nama Anda</h3>
+            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Pilih nama untuk mendaftarkan wajah ini.</p>
+            <input type="text" id="student-select-search" placeholder="Cari nama..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px;" />
+            <div id="student-select-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
+            <button id="student-select-cancel" style="margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;cursor:pointer;width:100%;font-size:15px;">Batal</button>
+        `;
+        
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        const listEl = dialog.querySelector('#student-select-list');
+        const searchEl = dialog.querySelector('#student-select-search');
+        const cancelBtn = dialog.querySelector('#student-select-cancel');
+        
+        function renderList(filter = '') {
+            const filtered = filter 
+                ? students.filter(s => s[1].toLowerCase().includes(filter.toLowerCase()) || s[0].toString().includes(filter))
+                : students;
+            
+            if (!filtered.length) {
+                listEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px 0;">Tidak ada siswa yang cocok</p>';
+                return;
+            }
+            
+            listEl.innerHTML = filtered.map(s => `
+                <button data-nis="${s[0]}" style="
+                    padding:10px 14px;
+                    border:1px solid #eee;
+                    border-radius:8px;
+                    background:white;
+                    cursor:pointer;
+                    text-align:left;
+                    font-size:14px;
+                    transition:background 0.15s;
+                    width:100%;
+                ">${escapeHtml(s[1])} <span style="color:#999;font-size:12px;">#${s[0]}</span></button>
+            `).join('');
+            
+            listEl.querySelectorAll('button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.body.removeChild(overlay);
+                    resolve(btn.dataset.nis);
+                });
+                btn.addEventListener('mouseenter', () => btn.style.background = '#f0f0f0');
+                btn.addEventListener('mouseleave', () => btn.style.background = 'white');
+            });
+        }
+        
+        searchEl.addEventListener('input', () => renderList(searchEl.value));
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(null);
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+                resolve(null);
+            }
+        });
+        
+        renderList();
+    });
+}
+
+// Register face
+// Register face
+async function registerFace(nis, photoData, descriptor, date, status, kelas) {
+    const statusEl = els.faceStatusMsg;
+    
+    try {
+        statusEl.textContent = '📝 Mendaftarkan wajah...';
+        
+        // Convert Float32Array to regular array for JSON
+        const descriptorArray = Array.from(descriptor);
+        
+        const result = await apiCall('registerFace', {
+            nis: nis,
+            descriptor: descriptorArray,
+            photoData: photoData
+        }, false, 'POST');
+        
+        if (result.success) {
+            // Update local cache - get name from students list
+            const student = state.students.find(s => s[0].toString() === nis);
+            state.faceDescriptors[nis] = {
+                name: student ? student[1] : nis,
+                descriptor: descriptor
+            };
+            
+            statusEl.className = 'status-msg success';
+            statusEl.textContent = `✅ Wajah terdaftar untuk ${student ? student[1] : nis}`;
+            
+            // Mark attendance
+            statusEl.textContent = '📝 Merekam absen...';
+            
+            const attResult = await apiCall('markFaceAttendance', {
+                nis: nis,
+                date: date,
+                status: status,
+                kelas: kelas
+            }, false, 'POST');
+            
+            if (attResult.success) {
+                statusEl.className = 'status-msg success';
+                const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
+                statusEl.textContent = `✅ ${statusLabel} untuk ${attResult.student.name}`;
+                
+                await loadStudents(kelas, date);
+                
+                showToast('✅ Absen berhasil', `${attResult.student.name} - ${statusLabel}`, null, false);
+                setTimeout(() => hideToastDelayed(2000), 500);
+            } else {
+                statusEl.className = 'status-msg error';
+                statusEl.textContent = `❌ Gagal absen: ${attResult.error || 'Unknown error'}`;
+            }
+        } else {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = `❌ Gagal mendaftar: ${result.error || 'Unknown error'}`;
+        }
+    } catch (error) {
+        statusEl.className = 'status-msg error';
+        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+    }
+}
+
+// Manual face registration (from register button)
+async function registerFaceManually() {
+    const nis = els.faceRegisterNis.value.trim();
+    const msgEl = els.faceRegisterMsg;
+    
+    if (!nis) {
+        msgEl.style.display = 'block';
+        msgEl.className = 'status-msg error';
+        msgEl.textContent = '❌ Masukkan NIS siswa';
+        return;
+    }
+    
+    msgEl.style.display = 'block';
+    msgEl.className = 'status-msg';
+    msgEl.textContent = '🔍 Memeriksa siswa...';
+    
+    try {
+        const students = state.students || [];
+        const student = students.find(s => s[0].toString() === nis);
+        
+        if (!student) {
+            msgEl.className = 'status-msg error';
+            msgEl.textContent = '❌ Siswa dengan NIS tersebut tidak ditemukan di kelas ini';
+            return;
+        }
+        
+        msgEl.textContent = '📸 Buka kamera untuk mengambil foto...';
+        
+        // Open camera for registration
+        await openCameraForRegistration(nis);
+        
+    } catch (error) {
+        msgEl.className = 'status-msg error';
+        msgEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+    }
+}
+
+async function openCameraForRegistration(nis) {
+    const msgEl = els.faceRegisterMsg;
+    
+    try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+            audio: false
+        });
+        
+        els.cameraPreview.srcObject = cameraStream;
+        await els.cameraPreview.play();
+        
+        els.faceOverlay.width = els.cameraPreview.videoWidth || 640;
+        els.faceOverlay.height = els.cameraPreview.videoHeight || 480;
+        
+        els.cameraContainer.style.display = 'block';
+        isCameraOpen = true;
+        
+        els.faceScanBtn.innerHTML = '<span class="camera-icon">📷</span> Tutup Kamera';
+        els.faceScanBtn.style.background = '#b13e3e';
+        
+        msgEl.textContent = '📸 Siap mengambil foto untuk NIS ' + nis;
+        msgEl.className = 'status-msg';
+        
+        startFaceDetection();
+        
+        setTimeout(async () => {
+            if (isCameraOpen) {
+                const result = await capturePhotoForRegistration(nis);
+                if (result) {
+                    await completeFaceRegistration(nis, result);
+                }
+            }
+        }, 2000);
+        
+    } catch (error) {
+        msgEl.className = 'status-msg error';
+        msgEl.textContent = '❌ Gagal membuka kamera: ' + error.message;
+    }
+}
+
+async function capturePhotoForRegistration(nis) {
+    if (!isCameraOpen || !els.cameraPreview.srcObject) return null;
+    
+    try {
+        const canvas = document.createElement('canvas');
+        const video = els.cameraPreview;
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const photoData = canvas.toDataURL('image/jpeg', 0.9);
+        
+        const detection = await faceapi.detectSingleFace(
+            canvas,
+            new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })
+        );
+        
+        if (!detection) {
+            els.faceRegisterMsg.className = 'status-msg error';
+            els.faceRegisterMsg.textContent = '❌ Tidak ada wajah terdeteksi. Coba lagi.';
+            return null;
+        }
+        
+        const descriptor = await faceapi.computeFaceDescriptor(canvas, detection);
+        
+        return { photoData, descriptor };
+    } catch (error) {
+        return null;
+    }
+}
+
+async function completeFaceRegistration(nis, result) {
+    const msgEl = els.faceRegisterMsg;
+    const { photoData, descriptor } = result;
+    
+    try {
+        const descriptorArray = Array.from(descriptor);
+        
+        const registerResult = await apiCall('registerFace', {
+            nis: nis,
+            descriptor: descriptorArray,
+            photoData: photoData
+        }, false, 'POST');
+        
+        if (registerResult.success) {
+            const student = state.students.find(s => s[0].toString() === nis);
+            state.faceDescriptors[nis] = {
+                name: student ? student[1] : nis,
+                descriptor: descriptor
+            };
+            
+            msgEl.className = 'status-msg success';
+            msgEl.textContent = `✅ Wajah terdaftar untuk ${student ? student[1] : nis}`;
+            els.faceRegisterNis.value = '';
+        } else {
+            msgEl.className = 'status-msg error';
+            msgEl.textContent = `❌ Gagal mendaftar: ${registerResult.error || 'Unknown error'}`;
+        }
+    } catch (error) {
+        msgEl.className = 'status-msg error';
+        msgEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+    }
+    
+    setTimeout(() => closeCamera(), 1000);
+}
+
+// ========================================
+// REST OF APP - TAB SWITCHING, LOAD CLASSES, STUDENTS, ETC
+// ========================================
 
 // ===== TAB SWITCHING =====
 function switchTab(tabName) {
@@ -1152,6 +1436,27 @@ async function flushAttendanceUpdates() {
         cacheData(kelas, date);
     } catch (error) {
         updates.forEach(u => queueAction('markAttendance', u));
+    }
+}
+
+// ===== QUEUE SYSTEM =====
+function queueAction(action, params) {
+    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
+    pending.push({ action, params, timestamp: Date.now() });
+    localStorage.setItem('pending_actions', JSON.stringify(pending));
+    updatePendingCounter();
+    showToast('Disimpan offline', 'Akan disinkronkan saat online', null, false);
+    setTimeout(() => hideToastDelayed(1500), 1000);
+}
+
+function updatePendingCounter() {
+    const pending = JSON.parse(localStorage.getItem('pending_actions') || '[]');
+    const el = document.getElementById('pending-counter');
+    if (pending.length && el) {
+        el.style.display = 'block';
+        el.textContent = `${pending.length} pending`;
+    } else if (el) {
+        el.style.display = 'none';
     }
 }
 
@@ -1482,6 +1787,12 @@ async function loadHistory() {
     }
 }
 
+function formatDate(iso) {
+    if (!iso) return 'Untitled';
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 // ===== CSV UPLOAD =====
 async function uploadCSV() {
     const file = els.csvUpload.files[0];
@@ -1517,6 +1828,18 @@ async function uploadCSV() {
 // ========================================
 // PIKET SCHEDULE BUILDER (Full Week)
 // ========================================
+
+let piketState = {
+    kelas: '',
+    allStudents: [],
+    monday: [],
+    tuesday: [],
+    wednesday: [],
+    thursday: [],
+    friday: [],
+    filteredStudents: [],
+    currentSchedule: null,
+};
 
 async function openPiketBuilderDialog() {
     const dialog = document.getElementById('piketBuilderDialog');
@@ -1811,9 +2134,11 @@ document.getElementById('piket-close-btn').onclick = () => {
     document.getElementById('piketBuilderDialog').close();
 };
 
-// ===== EVENT LISTENERS =====
+// ========================================
+// EVENT LISTENERS
+// ========================================
+
 function setupEventListeners() {
-    // Tab switching
     els.tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.tab;
@@ -1821,40 +2146,30 @@ function setupEventListeners() {
         });
     });
     
-    // Class selector
     els.classSelector.addEventListener('change', async () => {
         state.currentClass = els.classSelector.value;
         await loadStudents(state.currentClass, els.dateSelector.value);
     });
     
-    // Date selector
     els.dateSelector.addEventListener('change', async () => {
         state.currentDate = els.dateSelector.value;
         await loadStudents(els.classSelector.value, state.currentDate);
     });
     
-    // Refresh
     els.refreshBtn.addEventListener('click', async () => {
         apiCache.clear();
         studentListCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
     });
     
-    // Student search
     els.studentSearch.addEventListener('input', () => {
         renderOptimizedStudents();
     });
     
-    // WhatsApp report
     els.whatsappBtn.addEventListener('click', copyWhatsAppReport);
-    
-    // History
     els.historyLoadBtn.addEventListener('click', loadHistory);
-    
-    // CSV upload
     els.uploadCsvBtn.addEventListener('click', uploadCSV);
     
-    // Clear cache
     els.clearCacheBtn.addEventListener('click', () => {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
@@ -1868,7 +2183,6 @@ function setupEventListeners() {
         }
     });
     
-    // Mark late
     els.markLateBtn.addEventListener('click', markLateness);
     
     // FACE RECOGNITION EVENTS
@@ -1888,13 +2202,15 @@ function setupEventListeners() {
         els.faceRegisterBtn.addEventListener('click', registerFaceManually);
     }
     
-    // Set default date for face
     if (els.faceDate) {
         els.faceDate.value = new Date().toISOString().split('T')[0];
     }
 }
 
-// ===== ONLINE/OFFLINE =====
+// ========================================
+// ONLINE/OFFLINE
+// ========================================
+
 function updateOnlineStatus() {
     state.isOnline = navigator.onLine;
     if (els.connectionStatus) {
@@ -1904,20 +2220,15 @@ function updateOnlineStatus() {
     if (els.offlineBanner) {
         els.offlineBanner.style.display = state.isOnline ? 'none' : 'block';
     }
-    if (state.isOnline) {
-        processPendingActions();
-        if (els.classSelector.value) {
-            apiCache.clear();
-            studentListCache.clear();
-            loadStudents(els.classSelector.value, els.dateSelector.value);
-        }
-    }
 }
 
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 
-// ===== SERVICE WORKER =====
+// ========================================
+// SERVICE WORKER
+// ========================================
+
 function registerSW() {
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js')
@@ -1926,7 +2237,10 @@ function registerSW() {
     }
 }
 
-// ===== INITIALIZATION =====
+// ========================================
+// INITIALIZATION
+// ========================================
+
 document.addEventListener('DOMContentLoaded', async () => {
     els.dateSelector.value = state.currentDate;
     els.historyDate.value = state.currentDate;
@@ -1934,9 +2248,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     registerSW();
     updateOnlineStatus();
-    processPendingActions();
     
     await loadClasses();
+    await loadFaceModels();
     
     setTimeout(async () => {
         if (els.classSelector.options.length > 1) {
@@ -1946,17 +2260,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }, 500);
 });
 
-// ===== PERIODIC SYNC =====
+// ========================================
+// PERIODIC SYNC
+// ========================================
+
 setInterval(() => {
     if (navigator.onLine && els.classSelector.value) {
         apiCache.clear();
         studentListCache.clear();
         loadStudents(els.classSelector.value, els.dateSelector.value);
-        processPendingActions();
     }
 }, 300000);
 
-// ===== EXPOSE FUNCTIONS =====
+// ========================================
+// EXPOSE FUNCTIONS
+// ========================================
+
 window.markAttendance = markAttendance;
 window.togglePiket = togglePiket;
 window.uploadPiketPhoto = uploadPiketPhoto;

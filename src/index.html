@@ -110,7 +110,7 @@
     <!-- ===== FACE RECOGNITION TAB ===== -->
     <main id="tab-face" class="tab-content">
         <div class="card">
-            <h3>📸 Face Recognition Attendance</h3>
+            <h3>🧠 Face Recognition Attendance</h3>
             <p>Pilih status dan tanggal, lalu ambil foto untuk absen.</p>
             
             <div class="face-form">
@@ -126,19 +126,23 @@
                     <input type="date" id="face-date">
                 </div>
                 
+                <!-- Model loading status -->
+                <div id="model-status" class="status-msg" style="display:none;"></div>
+                
                 <!-- Camera Preview -->
-                <div id="camera-container" style="display:none;">
-                    <video id="camera-preview" autoplay playsinline></video>
-                    <div class="camera-controls">
-                        <button id="capture-photo-btn" class="primary-btn">📸 Ambil Foto</button>
-                        <button id="close-camera-btn" class="secondary-btn">✕ Tutup</button>
+                <div id="camera-container" style="display:none;position:relative;">
+                    <video id="camera-preview" autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:8px;"></video>
+                    <canvas id="face-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;border-radius:8px;"></canvas>
+                    <div class="camera-controls" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:10;">
+                        <button id="capture-photo-btn" class="primary-btn" style="padding:12px 24px;font-size:16px;">📸 Ambil Foto</button>
+                        <button id="close-camera-btn" class="secondary-btn" style="padding:12px 24px;">✕ Tutup</button>
                     </div>
                 </div>
                 
                 <div id="face-status-msg" class="status-msg" style="display:none;"></div>
                 
-                <button id="face-scan-btn" class="face-scan-btn">
-                    <span class="camera-icon">📸</span> Buka Kamera
+                <button id="face-scan-btn" class="face-scan-btn" disabled>
+                    <span class="camera-icon">📸</span> Memuat Model...
                 </button>
             </div>
             
@@ -149,7 +153,7 @@
                 <p>Daftarkan wajah siswa untuk absen otomatis.</p>
                 <div class="form-row">
                     <input type="text" id="face-register-nis" placeholder="NIS siswa..." />
-                    <button id="face-register-btn" class="secondary-btn">📸 Register</button>
+                    <button id="face-register-btn" class="secondary-btn" disabled>📸 Register</button>
                 </div>
                 <div id="face-register-msg" class="status-msg" style="display:none;"></div>
             </div>
@@ -239,6 +243,8 @@
     </form>
 </dialog>
 
+<!-- face-api.js library -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
