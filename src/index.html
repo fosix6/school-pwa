@@ -11,17 +11,32 @@
 </head>
 <body>
 
-<div id="app">
+<!-- ===== LOGIN SCREEN ===== -->
+<div id="login-screen" class="login-screen">
+    <div class="login-card">
+        <h1>School Manager</h1>
+        <p class="login-subtitle">Masukkan kode akses</p>
+        <div class="login-input-group">
+            <input type="password" id="password-input" placeholder="Kode akses..." maxlength="20" autofocus />
+            <button id="login-btn" class="primary-btn">Login</button>
+        </div>
+        <div id="login-error" class="login-error" style="display:none;">Kode salah, coba lagi</div>
+    </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="app" style="display:none;">
     <header class="app-header">
         <h1>School Manager</h1>
         <div id="connection-status" class="status-online">● Online</div>
+        <button id="logout-btn" class="logout-btn" style="font-size:12px;padding:4px 12px;background:#eee;border:1px solid #ddd;border-radius:20px;cursor:pointer;">Logout</button>
     </header>
 
     <nav class="tab-nav">
-        <button class="tab-btn active" data-tab="today">Hari Ini</button>
-        <button class="tab-btn" data-tab="history">History</button>
-        <button class="tab-btn" data-tab="admin">Admin</button>
-        <button class="tab-btn" data-tab="face" id="face-tab-btn">Face</button>
+        <button class="tab-btn active" data-tab="today" id="tab-today-btn">Hari Ini</button>
+        <button class="tab-btn" data-tab="history" id="tab-history-btn">History</button>
+        <button class="tab-btn" data-tab="admin" id="tab-admin-btn">Admin</button>
+        <button class="tab-btn" data-tab="face" id="tab-face-btn">Face</button>
     </nav>
 
     <main id="tab-today" class="tab-content active">
@@ -171,7 +186,7 @@
 
     <!-- Offline Banner -->
     <div id="offline-banner" class="offline-banner" style="display:none;">
-        ️ Offline - Perubahan akan disimpan saat koneksi kembali
+        ⚠️ Offline - Perubahan akan disimpan saat koneksi kembali
     </div>
 
     <!-- Pending Updates Counter -->
