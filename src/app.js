@@ -500,13 +500,14 @@ async function capturePhoto() {
 }
 
 // Process face with descriptor
+// Process face with descriptor - NOW WORKS FOR ALL STUDENTS
 async function processFaceWithDescriptor(photoData, descriptor, detection) {
     const statusEl = els.faceStatusMsg;
     
     try {
         const status = els.faceStatus.value;
         const date = els.faceDate.value || new Date().toISOString().split('T')[0];
-        const kelas = els.classSelector.value;
+        const kelas = els.classSelector.value; // Only used for attendance marking, NOT for filtering
         
         if (!date) {
             statusEl.className = 'status-msg error';
@@ -514,26 +515,12 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             return;
         }
         
-        if (!kelas) {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Silakan pilih kelas terlebih dahulu di tab "Hari Ini"';
-            return;
-        }
-        
-        const students = state.students || [];
-        if (!students.length) {
-            statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Tidak ada siswa di kelas ini';
-            return;
-        }
-        
-        statusEl.textContent = '🔍 Membandingkan dengan database...';
+        // NO CLASS FILTERING - Compare against ALL students
+        statusEl.textContent = '🔍 Membandingkan dengan database semua siswa...';
         
         const results = [];
         for (const [nis, data] of Object.entries(state.faceDescriptors)) {
-            const student = students.find(s => s[0].toString() === nis);
-            if (!student) continue;
-            
+            // REMOVED THE CLASS FILTER - compare against ALL registered faces
             const distance = faceapi.euclideanDistance(descriptor, data.descriptor);
             const similarity = Math.max(0, 1 - distance);
             
@@ -557,11 +544,12 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             if (confirmed) {
                 statusEl.textContent = '📝 Merekam absen...';
                 
+                // Mark attendance - kelas is optional now
                 const result = await apiCall('markFaceAttendance', {
                     nis: match.nis,
                     date: date,
                     status: status,
-                    kelas: kelas
+                    kelas: kelas || '' // Empty if no class selected
                 }, false, 'POST');
                 
                 if (result.success) {
@@ -569,7 +557,10 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
                     const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
                     statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
                     
-                    await loadStudents(kelas, date);
+                    // Refresh if class is selected
+                    if (kelas) {
+                        await loadStudents(kelas, date);
+                    }
                     
                     showToast('✅ Absen berhasil', `${result.student.name} - ${statusLabel}`, null, false);
                     setTimeout(() => hideToastDelayed(2000), 500);
@@ -589,7 +580,9 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             const shouldRegister = await showRegistrationPrompt(photoData);
             
             if (shouldRegister) {
-                const selectedNis = await showStudentSelectionDialog(students);
+                // Get ALL students for registration (not filtered by class)
+                const allStudents = await getAllStudents();
+                const selectedNis = await showStudentSelectionDialog(allStudents);
                 if (selectedNis) {
                     await registerFace(selectedNis, photoData, descriptor, date, status, kelas);
                 }
@@ -605,6 +598,19 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         console.error('Face processing error:', error);
         statusEl.className = 'status-msg error';
         statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+    }
+}
+
+// Get ALL students from the server (not filtered by class)
+async function getAllStudents() {
+    try {
+        // This gets all students from the Students sheet
+        const data = await apiCall('getAllStudents', {}, false);
+        return data.students || [];
+    } catch (error) {
+        console.warn('⚠️ Failed to get all students:', error);
+        // Fallback to current state students
+        return state.students || [];
     }
 }
 
@@ -813,6 +819,7 @@ function showRegistrationPrompt(photoData) {
 }
 
 // Show student selection dialog
+// Show student selection dialog - uses ALL students passed in
 function showStudentSelectionDialog(students) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -855,9 +862,12 @@ function showStudentSelectionDialog(students) {
         const cancelBtn = dialog.querySelector('#student-select-cancel');
         
         function renderList(filter = '') {
+            // Sort students by name
+            const sorted = [...students].sort((a, b) => a[1].localeCompare(b[1]));
+            
             const filtered = filter 
-                ? students.filter(s => s[1].toLowerCase().includes(filter.toLowerCase()) || s[0].toString().includes(filter))
-                : students;
+                ? sorted.filter(s => s[1].toLowerCase().includes(filter.toLowerCase()) || s[0].toString().includes(filter))
+                : sorted;
             
             if (!filtered.length) {
                 listEl.innerHTML = '<p style="text-align:center;color:#999;padding:20px 0;">Tidak ada siswa yang cocok</p>';
@@ -875,7 +885,11 @@ function showStudentSelectionDialog(students) {
                     font-size:14px;
                     transition:background 0.15s;
                     width:100%;
-                ">${escapeHtml(s[1])} <span style="color:#999;font-size:12px;">#${s[0]}</span></button>
+                ">
+                    <strong>${escapeHtml(s[1])}</strong>
+                    <span style="color:#999;font-size:12px;"> #${s[0]}</span>
+                    <span style="color:#999;font-size:11px;display:block;">${escapeHtml(s[2] || '')} ${escapeHtml(s[3] || '')}</span>
+                </button>
             `).join('');
             
             listEl.querySelectorAll('button').forEach(btn => {
