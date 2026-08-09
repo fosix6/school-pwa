@@ -13,7 +13,7 @@
 
 <div id="app">
     <header class="app-header">
-        <h1>🏫 School Manager</h1>
+        <h1>School Manager</h1>
         <div id="connection-status" class="status-online">● Online</div>
     </header>
 
@@ -21,7 +21,7 @@
         <button class="tab-btn active" data-tab="today">Hari Ini</button>
         <button class="tab-btn" data-tab="history">History</button>
         <button class="tab-btn" data-tab="admin">Admin</button>
-        <button class="tab-btn" data-tab="face" id="face-tab-btn">📸 Face</button>
+        <button class="tab-btn" data-tab="face" id="face-tab-btn">Face</button>
     </nav>
 
     <main id="tab-today" class="tab-content active">
@@ -110,15 +110,15 @@
     <!-- ===== FACE RECOGNITION TAB ===== -->
     <main id="tab-face" class="tab-content">
         <div class="card">
-            <h3>🧠 Face Recognition Attendance</h3>
+            <h3>Face Recognition Attendance</h3>
             <p>Pilih status dan tanggal, lalu ambil foto untuk absen.</p>
             
             <div class="face-form">
                 <div class="form-group">
                     <label for="face-status">Status</label>
                     <select id="face-status">
-                        <option value="hadir">✅ Hadir</option>
-                        <option value="telat">⏰ Terlambat</option>
+                        <option value="hadir">Hadir</option>
+                        <option value="telat">Terlambat</option>
                     </select>
                 </div>
                 <div class="form-group">
@@ -134,7 +134,7 @@
                     <video id="camera-preview" autoplay playsinline style="width:100%;height:100%;object-fit:cover;border-radius:8px;"></video>
                     <canvas id="face-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;border-radius:8px;"></canvas>
                     <div class="camera-controls" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:10;">
-                        <button id="capture-photo-btn" class="primary-btn" style="padding:12px 24px;font-size:16px;">📸 Ambil Foto</button>
+                        <button id="capture-photo-btn" class="primary-btn" style="padding:12px 24px;font-size:16px;">Ambil Foto</button>
                         <button id="close-camera-btn" class="secondary-btn" style="padding:12px 24px;">✕ Tutup</button>
                     </div>
                 </div>
@@ -142,18 +142,18 @@
                 <div id="face-status-msg" class="status-msg" style="display:none;"></div>
                 
                 <button id="face-scan-btn" class="face-scan-btn" disabled>
-                    <span class="camera-icon">📸</span> Memuat Model...
+                    <span class="camera-icon"></span> Memuat Model...
                 </button>
             </div>
             
             <hr />
             
             <div class="face-register">
-                <h4>📝 Register Face</h4>
+                <h4>Register Face</h4>
                 <p>Daftarkan wajah siswa untuk absen otomatis.</p>
                 <div class="form-row">
                     <input type="text" id="face-register-nis" placeholder="NIS siswa..." />
-                    <button id="face-register-btn" class="secondary-btn" disabled>📸 Register</button>
+                    <button id="face-register-btn" class="secondary-btn" disabled>Register</button>
                 </div>
                 <div id="face-register-msg" class="status-msg" style="display:none;"></div>
             </div>
@@ -171,7 +171,7 @@
 
     <!-- Offline Banner -->
     <div id="offline-banner" class="offline-banner" style="display:none;">
-        ⚠️ Offline - Perubahan akan disimpan saat koneksi kembali
+        ️ Offline - Perubahan akan disimpan saat koneksi kembali
     </div>
 
     <!-- Pending Updates Counter -->

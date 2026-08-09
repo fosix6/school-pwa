@@ -263,7 +263,7 @@ async function loadFaceModels() {
     const modelStatus = els.modelStatus;
     modelStatus.style.display = 'block';
     modelStatus.className = 'status-msg';
-    modelStatus.textContent = '📥 Memuat model face recognition...';
+    modelStatus.textContent = 'Memuat model face recognition...';
     
     try {
         const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
@@ -275,10 +275,10 @@ async function loadFaceModels() {
         state.faceModelsLoaded = true;
         
         modelStatus.className = 'status-msg success';
-        modelStatus.textContent = '✅ Model face recognition siap!';
+        modelStatus.textContent = 'Model face recognition siap!';
         
         els.faceScanBtn.disabled = false;
-        els.faceScanBtn.innerHTML = '<span class="camera-icon">📸</span> Buka Kamera';
+        els.faceScanBtn.innerHTML = '<span class="camera-icon"></span> Buka Kamera';
         els.faceRegisterBtn.disabled = false;
         
         setTimeout(() => {
@@ -288,9 +288,9 @@ async function loadFaceModels() {
         await loadFaceDescriptors();
         
     } catch (error) {
-        console.error('❌ Failed to load face models:', error);
+        console.error('Failed to load face models:', error);
         modelStatus.className = 'status-msg error';
-        modelStatus.textContent = '❌ Gagal memuat model: ' + error.message;
+        modelStatus.textContent = 'Gagal memuat model: ' + error.message;
     }
 }
 
@@ -307,10 +307,10 @@ async function loadFaceDescriptors() {
                     descriptor: new Float32Array(item.descriptor)
                 };
             });
-            console.log('✅ Loaded', Object.keys(state.faceDescriptors).length, 'face descriptors');
+            console.log('Loaded', Object.keys(state.faceDescriptors).length, 'face descriptors');
         }
     } catch (error) {
-        console.warn('⚠️ Failed to load face descriptors:', error);
+        console.warn('️ Failed to load face descriptors:', error);
         state.faceDescriptors = {};
     }
 }
@@ -326,7 +326,7 @@ async function openCamera() {
         const statusEl = els.faceStatusMsg;
         statusEl.style.display = 'block';
         statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Model face recognition belum siap. Tunggu sebentar...';
+        statusEl.textContent = 'Model face recognition belum siap. Tunggu sebentar...';
         return;
     }
     
@@ -334,7 +334,7 @@ async function openCamera() {
         const statusEl = els.faceStatusMsg;
         statusEl.style.display = 'block';
         statusEl.className = 'status-msg';
-        statusEl.textContent = '📸 Membuka kamera...';
+        statusEl.textContent = 'Membuka kamera...';
         
         cameraStream = await navigator.mediaDevices.getUserMedia({
             video: {
@@ -356,7 +356,7 @@ async function openCamera() {
         els.cameraContainer.style.display = 'block';
         isCameraOpen = true;
         
-        els.faceScanBtn.innerHTML = '<span class="camera-icon">📷</span> Tutup Kamera';
+        els.faceScanBtn.innerHTML = '<span class="camera-icon"></span> Tutup Kamera';
         els.faceScanBtn.style.background = '#b13e3e';
         
         statusEl.style.display = 'none';
@@ -375,7 +375,7 @@ async function openCamera() {
         const statusEl = els.faceStatusMsg;
         statusEl.style.display = 'block';
         statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Gagal membuka kamera: ' + (error.message || 'Izin kamera ditolak');
+        statusEl.textContent = 'Gagal membuka kamera: ' + (error.message || 'Izin kamera ditolak');
     }
 }
 
@@ -408,11 +408,11 @@ function startFaceDetection() {
                 
                 ctx.fillStyle = '#00ff00';
                 ctx.font = '16px Arial';
-                ctx.fillText('✅ Wajah terdeteksi', box.x, box.y - 10);
+                ctx.fillText('Wajah terdeteksi', box.x, box.y - 10);
             } else {
                 ctx.fillStyle = '#ff0000';
                 ctx.font = '20px Arial';
-                ctx.fillText('❌ Tidak ada wajah', 20, 50);
+                ctx.fillText('Tidak ada wajah', 20, 50);
             }
         } catch (e) {
             // Ignore
@@ -435,7 +435,7 @@ function closeCamera() {
     els.cameraContainer.style.display = 'none';
     isCameraOpen = false;
     
-    els.faceScanBtn.innerHTML = '<span class="camera-icon">📸</span> Buka Kamera';
+    els.faceScanBtn.innerHTML = '<span class="camera-icon">span> Buka Kamera';
     els.faceScanBtn.style.background = '';
     
     const canvas = els.faceOverlay;
@@ -449,7 +449,7 @@ async function capturePhoto() {
         const statusEl = els.faceStatusMsg;
         statusEl.style.display = 'block';
         statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Kamera tidak terbuka';
+        statusEl.textContent = 'Kamera tidak terbuka';
         return;
     }
     
@@ -457,7 +457,7 @@ async function capturePhoto() {
         const statusEl = els.faceStatusMsg;
         statusEl.style.display = 'block';
         statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Model belum siap';
+        statusEl.textContent = 'Model belum siap';
         return;
     }
     
@@ -465,7 +465,7 @@ async function capturePhoto() {
         const statusEl = els.faceStatusMsg;
         statusEl.style.display = 'block';
         statusEl.className = 'status-msg';
-        statusEl.textContent = '🧠 Memproses wajah...';
+        statusEl.textContent = 'Memproses wajah...';
         
         const canvas = document.createElement('canvas');
         const video = els.cameraPreview;
@@ -483,7 +483,7 @@ async function capturePhoto() {
         
         if (!detection) {
             statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Tidak ada wajah terdeteksi. Coba lagi dengan posisi yang lebih jelas.';
+            statusEl.textContent = 'Tidak ada wajah terdeteksi. Coba lagi dengan posisi yang lebih jelas.';
             return;
         }
         
@@ -495,7 +495,7 @@ async function capturePhoto() {
         console.error('Capture error:', error);
         const statusEl = els.faceStatusMsg;
         statusEl.className = 'status-msg error';
-        statusEl.textContent = '❌ Gagal memproses: ' + error.message;
+        statusEl.textContent = 'Gagal memproses: ' + error.message;
     }
 }
 // ========================================
@@ -512,33 +512,33 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         
         if (!date) {
             statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Silakan pilih tanggal';
+            statusEl.textContent = 'Silakan pilih tanggal';
             return;
         }
         
-        statusEl.textContent = '📥 Memuat semua siswa dari database...';
+        statusEl.textContent = 'Memuat semua siswa dari database...';
         
         // ===== STEP 1: Get ALL students (NO CLASS FILTER) =====
         let allStudents = [];
         try {
             const data = await apiCall('getAllStudents', {}, false);
             allStudents = data.students || [];
-            console.log('📥 Loaded ALL students:', allStudents.length);
+            console.log('Loaded ALL students:', allStudents.length);
         } catch (error) {
-            console.error('❌ Failed to load all students:', error);
+            console.error('Failed to load all students:', error);
             statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Gagal memuat data siswa. Periksa koneksi.';
+            statusEl.textContent = 'Gagal memuat data siswa. Periksa koneksi.';
             return;
         }
         
         if (!allStudents || allStudents.length === 0) {
             statusEl.className = 'status-msg error';
-            statusEl.textContent = '❌ Tidak ada siswa di database. Import CSV dulu.';
+            statusEl.textContent = 'Tidak ada siswa di database. Import CSV dulu.';
             return;
         }
         
         // ===== STEP 2: Compare with stored face descriptors =====
-        statusEl.textContent = '🔍 Membandingkan dengan database wajah...';
+        statusEl.textContent = 'Membandingkan dengan database wajah...';
         
         const results = [];
         for (const [nis, data] of Object.entries(state.faceDescriptors)) {
@@ -562,12 +562,12 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         // ===== STEP 3: Check if we have a match =====
         if (results.length > 0 && results[0].similarity > FACE_MATCH_THRESHOLD) {
             const match = results[0];
-            console.log('✅ Face match:', match.name, 'similarity:', match.similarity);
+            console.log('Face match:', match.name, 'similarity:', match.similarity);
             
             const confirmed = await showFaceConfirmationDialog(photoData, match.name, match.nis, match.similarity);
             
             if (confirmed) {
-                statusEl.textContent = '📝 Merekam absen...';
+                statusEl.textContent = 'Merekam absen...';
                 
                 const result = await apiCall('markFaceAttendance', {
                     nis: match.nis,
@@ -579,53 +579,53 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
                 if (result.success) {
                     statusEl.className = 'status-msg success';
                     const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
-                    statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
+                    statusEl.textContent = `${statusLabel} untuk ${result.student.name}`;
                     
                     // Refresh the class view if a class is selected
                     if (kelas) {
                         await loadStudents(kelas, date);
                     }
                     
-                    showToast('✅ Absen berhasil', `${result.student.name} - ${statusLabel}`, null, false);
+                    showToast('Absen berhasil', `${result.student.name} - ${statusLabel}`, null, false);
                     setTimeout(() => hideToastDelayed(2000), 500);
                 } else {
                     statusEl.className = 'status-msg error';
-                    statusEl.textContent = `❌ Gagal absen: ${result.error || 'Unknown error'}`;
+                    statusEl.textContent = `Gagal absen: ${result.error || 'Unknown error'}`;
                 }
             } else {
                 statusEl.className = 'status-msg';
-                statusEl.textContent = '⏹️ Dibatalkan';
+                statusEl.textContent = ' Dibatalkan';
             }
         } else {
             // ===== NO MATCH - Ask to register =====
             statusEl.className = 'status-msg';
-            statusEl.textContent = '👤 Wajah tidak dikenali. Apakah Anda ingin mendaftar?';
+            statusEl.textContent = 'Wajah tidak dikenali. Apakah Anda ingin mendaftar?';
             
             const shouldRegister = await showRegistrationPrompt(photoData);
             
             if (shouldRegister) {
                 // Use ALL students (already loaded)
-                statusEl.textContent = `👤 Pilih nama Anda dari ${allStudents.length} siswa...`;
+                statusEl.textContent = `Pilih nama Anda dari ${allStudents.length} siswa...`;
                 const selectedNis = await showStudentSelectionDialog(allStudents);
                 
                 if (selectedNis) {
                     await registerFace(selectedNis, photoData, descriptor, date, status, kelas);
                 } else {
                     statusEl.className = 'status-msg';
-                    statusEl.textContent = '⏹️ Dibatalkan';
+                    statusEl.textContent = '️ Dibatalkan';
                 }
             } else {
                 statusEl.className = 'status-msg';
-                statusEl.textContent = '⏹️ Dibatalkan';
+                statusEl.textContent = '️ Dibatalkan';
             }
         }
         
         setTimeout(() => closeCamera(), 1500);
         
     } catch (error) {
-        console.error('❌ Face processing error:', error);
+        console.error('Face processing error:', error);
         statusEl.className = 'status-msg error';
-        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+        statusEl.textContent = `Error: ${error.message || 'Unknown error'}`;
     }
 }
 
@@ -637,7 +637,7 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
     const statusEl = els.faceStatusMsg;
     
     try {
-        statusEl.textContent = '📝 Mendaftarkan wajah...';
+        statusEl.textContent = 'Mendaftarkan wajah...';
         
         const descriptorArray = Array.from(descriptor);
         
@@ -659,10 +659,10 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
             };
             
             statusEl.className = 'status-msg success';
-            statusEl.textContent = `✅ Wajah terdaftar untuk ${student ? student[1] : nis}`;
+            statusEl.textContent = `Wajah terdaftar untuk ${student ? student[1] : nis}`;
             
             // Mark attendance
-            statusEl.textContent = '📝 Merekam absen...';
+            statusEl.textContent = 'Merekam absen...';
             
             const attResult = await apiCall('markFaceAttendance', {
                 nis: nis,
@@ -674,27 +674,27 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
             if (attResult.success) {
                 statusEl.className = 'status-msg success';
                 const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
-                statusEl.textContent = `✅ ${statusLabel} untuk ${attResult.student.name}`;
+                statusEl.textContent = `${statusLabel} untuk ${attResult.student.name}`;
                 
                 if (kelas) {
                     await loadStudents(kelas, date);
                 }
                 
-                showToast('✅ Absen berhasil', `${attResult.student.name} - ${statusLabel}`, null, false);
+                showToast('Absen berhasil', `${attResult.student.name} - ${statusLabel}`, null, false);
                 setTimeout(() => hideToastDelayed(2000), 500);
             } else {
                 statusEl.className = 'status-msg error';
-                statusEl.textContent = `❌ Gagal absen: ${attResult.error || 'Unknown error'}`;
+                statusEl.textContent = `Gagal absen: ${attResult.error || 'Unknown error'}`;
             }
         } else {
             statusEl.className = 'status-msg error';
-            statusEl.textContent = `❌ Gagal mendaftar: ${result.error || 'Unknown error'}`;
+            statusEl.textContent = `Gagal mendaftar: ${result.error || 'Unknown error'}`;
             console.error('Register failed:', result);
         }
     } catch (error) {
         console.error('Register error:', error);
         statusEl.className = 'status-msg error';
-        statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+        statusEl.textContent = `Error: ${error.message || 'Unknown error'}`;
     }
 }
 
@@ -728,7 +728,7 @@ function showRegistrationPrompt(photoData) {
         `;
         
         dialog.innerHTML = `
-            <h3 style="margin:0 0 4px 0;font-size:20px;">👤 Wajah Tidak Dikenali</h3>
+            <h3 style="margin:0 0 4px 0;font-size:20px;">Wajah Tidak Dikenali</h3>
             <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah Anda ingin mendaftarkan wajah ini?</p>
             <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:20px;">
                 <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;display:block;" />
@@ -757,7 +757,7 @@ function showRegistrationPrompt(photoData) {
                     font-weight:600;
                     font-size:15px;
                     transition:background 0.15s;
-                ">📝 Daftar</button>
+                ">Daftar</button>
             </div>
         `;
         
@@ -822,7 +822,7 @@ function showStudentSelectionDialog(students) {
         `;
         
         dialog.innerHTML = `
-            <h3 style="margin:0 0 4px 0;font-size:18px;">👤 Pilih Nama Anda</h3>
+            <h3 style="margin:0 0 4px 0;font-size:18px;">Pilih Nama Anda</h3>
             <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Pilih nama untuk mendaftarkan wajah ini.</p>
             <input type="text" id="student-select-search" placeholder="Cari nama..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px;" />
             <div id="student-select-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
@@ -930,7 +930,7 @@ function showFaceConfirmationDialog(photoData, name, nis, similarity) {
         const confidenceEmoji = confidencePercent > 80 ? '🟢' : confidencePercent > 60 ? '🟡' : '🔴';
         
         dialog.innerHTML = `
-            <h3 style="margin:0 0 4px 0;font-size:20px;">📸 Face Match Found</h3>
+            <h3 style="margin:0 0 4px 0;font-size:20px;">Face Match Found</h3>
             <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah ini wajah yang benar?</p>
             
             <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:16px;">
@@ -972,7 +972,7 @@ function showFaceConfirmationDialog(photoData, name, nis, similarity) {
                     font-weight:600;
                     font-size:15px;
                     transition:all 0.15s;
-                ">✅ Continue</button>
+                ">Continue</button>
             </div>
         `;
         
@@ -1028,13 +1028,13 @@ async function registerFaceManually() {
     if (!nis) {
         msgEl.style.display = 'block';
         msgEl.className = 'status-msg error';
-        msgEl.textContent = '❌ Masukkan NIS siswa';
+        msgEl.textContent = 'Masukkan NIS siswa';
         return;
     }
     
     msgEl.style.display = 'block';
     msgEl.className = 'status-msg';
-    msgEl.textContent = '🔍 Memeriksa siswa...';
+    msgEl.textContent = 'Memeriksa siswa...';
     
     try {
         // Get ALL students from server
@@ -1044,17 +1044,17 @@ async function registerFaceManually() {
         
         if (!student) {
             msgEl.className = 'status-msg error';
-            msgEl.textContent = '❌ Siswa dengan NIS tersebut tidak ditemukan di database';
+            msgEl.textContent = 'Siswa dengan NIS tersebut tidak ditemukan di database';
             return;
         }
         
-        msgEl.textContent = '📸 Buka kamera untuk mengambil foto...';
+        msgEl.textContent = 'Buka kamera untuk mengambil foto...';
         
         await openCameraForRegistration(nis);
         
     } catch (error) {
         msgEl.className = 'status-msg error';
-        msgEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+        msgEl.textContent = `Error: ${error.message || 'Unknown error'}`;
     }
 }
 
@@ -1076,10 +1076,10 @@ async function openCameraForRegistration(nis) {
         els.cameraContainer.style.display = 'block';
         isCameraOpen = true;
         
-        els.faceScanBtn.innerHTML = '<span class="camera-icon">📷</span> Tutup Kamera';
+        els.faceScanBtn.innerHTML = '<span class="camera-icon"></span> Tutup Kamera';
         els.faceScanBtn.style.background = '#b13e3e';
         
-        msgEl.textContent = '📸 Siap mengambil foto untuk NIS ' + nis;
+        msgEl.textContent = 'Siap mengambil foto untuk NIS ' + nis;
         msgEl.className = 'status-msg';
         
         startFaceDetection();
@@ -1095,7 +1095,7 @@ async function openCameraForRegistration(nis) {
         
     } catch (error) {
         msgEl.className = 'status-msg error';
-        msgEl.textContent = '❌ Gagal membuka kamera: ' + error.message;
+        msgEl.textContent = 'Gagal membuka kamera: ' + error.message;
     }
 }
 
@@ -1119,7 +1119,7 @@ async function capturePhotoForRegistration(nis) {
         
         if (!detection) {
             els.faceRegisterMsg.className = 'status-msg error';
-            els.faceRegisterMsg.textContent = '❌ Tidak ada wajah terdeteksi. Coba lagi.';
+            els.faceRegisterMsg.textContent = 'Tidak ada wajah terdeteksi. Coba lagi.';
             return null;
         }
         
@@ -1156,15 +1156,15 @@ async function completeFaceRegistration(nis, result) {
             };
             
             msgEl.className = 'status-msg success';
-            msgEl.textContent = `✅ Wajah terdaftar untuk ${student ? student[1] : nis}`;
+            msgEl.textContent = `Wajah terdaftar untuk ${student ? student[1] : nis}`;
             els.faceRegisterNis.value = '';
         } else {
             msgEl.className = 'status-msg error';
-            msgEl.textContent = `❌ Gagal mendaftar: ${registerResult.error || 'Unknown error'}`;
+            msgEl.textContent = `Gagal mendaftar: ${registerResult.error || 'Unknown error'}`;
         }
     } catch (error) {
         msgEl.className = 'status-msg error';
-        msgEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
+        msgEl.textContent = `Error: ${error.message || 'Unknown error'}`;
     }
     
     setTimeout(() => closeCamera(), 1000);
@@ -1540,7 +1540,7 @@ async function markLateness() {
     const select = els.lateStudentSelect;
     const nis = select.value;
     if (!nis) {
-        showToast('⚠️ Pilih siswa', 'Silakan pilih siswa yang terlambat', null, true);
+        showToast('️ Pilih siswa', 'Silakan pilih siswa yang terlambat', null, true);
         setTimeout(() => hideToastDelayed(1500), 1000);
         return;
     }
@@ -1793,7 +1793,7 @@ function copyWhatsAppReport() {
 async function loadHistory() {
     const date = els.historyDate.value;
     if (!date) {
-        showToast('⚠️ Pilih tanggal', 'Tanggal harus diisi', null, true);
+        showToast(' Pilih tanggal', 'Tanggal harus diisi', null, true);
         setTimeout(() => hideToastDelayed(1500), 1000);
         return;
     }
@@ -1855,7 +1855,7 @@ function formatDate(iso) {
 async function uploadCSV() {
     const file = els.csvUpload.files[0];
     if (!file) {
-        showToast('⚠️ Pilih file', 'File CSV diperlukan', null, true);
+        showToast('️ Pilih file', 'File CSV diperlukan', null, true);
         setTimeout(() => hideToastDelayed(1500), 1000);
         return;
     }
@@ -2120,7 +2120,7 @@ function findAssignedDay(nis) {
 document.getElementById('piket-generate-btn').onclick = () => {
     const kelas = document.getElementById('piket-class-selector').value;
     if (!kelas) {
-        document.getElementById('piket-status').textContent = '⚠️ Pilih kelas terlebih dahulu';
+        document.getElementById('piket-status').textContent = '️ Pilih kelas terlebih dahulu';
         document.getElementById('piket-status').className = 'status-msg error';
         return;
     }
@@ -2144,7 +2144,7 @@ document.getElementById('piket-generate-btn').onclick = () => {
 
 document.getElementById('piket-save-btn').onclick = async () => {
     if (!piketState.currentSchedule) {
-        document.getElementById('piket-status').textContent = '⚠️ Generate JSON first';
+        document.getElementById('piket-status').textContent = '️ Generate JSON first';
         document.getElementById('piket-status').className = 'status-msg error';
         return;
     }

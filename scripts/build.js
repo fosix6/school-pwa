@@ -33,7 +33,7 @@ for (const file of files) {
     const destPath = path.join(__dirname, '..', file.dest);
     
     if (!fs.existsSync(srcPath)) {
-        console.warn(`⚠️  Source file not found: ${file.src}`);
+        console.warn(`️  Source file not found: ${file.src}`);
         continue;
     }
     
