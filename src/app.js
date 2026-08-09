@@ -499,15 +499,13 @@ async function capturePhoto() {
     }
 }
 
-// Process face with descriptor
-// Process face with descriptor - NOW WORKS FOR ALL STUDENTS
 async function processFaceWithDescriptor(photoData, descriptor, detection) {
     const statusEl = els.faceStatusMsg;
     
     try {
         const status = els.faceStatus.value;
         const date = els.faceDate.value || new Date().toISOString().split('T')[0];
-        const kelas = els.classSelector.value; // Only used for attendance marking, NOT for filtering
+        const kelas = els.classSelector.value;
         
         if (!date) {
             statusEl.className = 'status-msg error';
@@ -515,12 +513,10 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             return;
         }
         
-        // NO CLASS FILTERING - Compare against ALL students
         statusEl.textContent = '🔍 Membandingkan dengan database semua siswa...';
         
         const results = [];
         for (const [nis, data] of Object.entries(state.faceDescriptors)) {
-            // REMOVED THE CLASS FILTER - compare against ALL registered faces
             const distance = faceapi.euclideanDistance(descriptor, data.descriptor);
             const similarity = Math.max(0, 1 - distance);
             
@@ -538,18 +534,16 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             const match = results[0];
             console.log('✅ Face match:', match.name, 'similarity:', match.similarity);
             
-            // SHOW CONFIRMATION DIALOG with name and similarity
             const confirmed = await showFaceConfirmationDialog(photoData, match.name, match.nis, match.similarity);
             
             if (confirmed) {
                 statusEl.textContent = '📝 Merekam absen...';
                 
-                // Mark attendance - kelas is optional now
                 const result = await apiCall('markFaceAttendance', {
                     nis: match.nis,
                     date: date,
                     status: status,
-                    kelas: kelas || '' // Empty if no class selected
+                    kelas: kelas || ''
                 }, false, 'POST');
                 
                 if (result.success) {
@@ -557,7 +551,6 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
                     const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
                     statusEl.textContent = `✅ ${statusLabel} untuk ${result.student.name}`;
                     
-                    // Refresh if class is selected
                     if (kelas) {
                         await loadStudents(kelas, date);
                     }
@@ -580,11 +573,24 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
             const shouldRegister = await showRegistrationPrompt(photoData);
             
             if (shouldRegister) {
-                // Get ALL students for registration (not filtered by class)
+                // Get ALL students from server
+                statusEl.textContent = '📥 Memuat daftar semua siswa...';
                 const allStudents = await getAllStudents();
+                
+                if (!allStudents || allStudents.length === 0) {
+                    statusEl.className = 'status-msg error';
+                    statusEl.textContent = '❌ Tidak ada siswa di database';
+                    return;
+                }
+                
+                statusEl.textContent = '👤 Pilih nama Anda...';
                 const selectedNis = await showStudentSelectionDialog(allStudents);
+                
                 if (selectedNis) {
                     await registerFace(selectedNis, photoData, descriptor, date, status, kelas);
+                } else {
+                    statusEl.className = 'status-msg';
+                    statusEl.textContent = '⏹️ Dibatalkan';
                 }
             } else {
                 statusEl.className = 'status-msg';
@@ -818,8 +824,96 @@ function showRegistrationPrompt(photoData) {
     });
 }
 
-// Show student selection dialog
-// Show student selection dialog - uses ALL students passed in
+function showRegistrationPrompt(photoData) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000001;
+            padding: 20px;
+        `;
+        
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            background: white;
+            border-radius: 16px;
+            padding: 28px 24px;
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+        `;
+        
+        dialog.innerHTML = `
+            <h3 style="margin:0 0 4px 0;font-size:20px;">👤 Wajah Tidak Dikenali</h3>
+            <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Apakah Anda ingin mendaftarkan wajah ini?</p>
+            <div style="background:#f5f5f5;border-radius:12px;overflow:hidden;margin-bottom:20px;">
+                <img src="${photoData}" style="width:100%;max-height:150px;object-fit:cover;display:block;" />
+            </div>
+            <div style="display:flex;gap:10px;">
+                <button id="reg-prompt-cancel" style="
+                    flex:1;
+                    padding:14px;
+                    border:2px solid #ddd;
+                    border-radius:10px;
+                    background:transparent;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    color:#666;
+                    transition:background 0.15s;
+                ">✕ Batal</button>
+                <button id="reg-prompt-register" style="
+                    flex:1;
+                    padding:14px;
+                    border:none;
+                    border-radius:10px;
+                    background:#1a6bb0;
+                    color:white;
+                    cursor:pointer;
+                    font-weight:600;
+                    font-size:15px;
+                    transition:background 0.15s;
+                ">📝 Daftar</button>
+            </div>
+        `;
+        
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        const cancelBtn = dialog.querySelector('#reg-prompt-cancel');
+        const registerBtn = dialog.querySelector('#reg-prompt-register');
+        
+        cancelBtn.addEventListener('mouseenter', () => cancelBtn.style.background = '#f5f5f5');
+        cancelBtn.addEventListener('mouseleave', () => cancelBtn.style.background = 'transparent');
+        registerBtn.addEventListener('mouseenter', () => registerBtn.style.background = '#155a96');
+        registerBtn.addEventListener('mouseleave', () => registerBtn.style.background = '#1a6bb0');
+        
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(false);
+        });
+        
+        registerBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+            resolve(true);
+        });
+        
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                document.body.removeChild(overlay);
+                resolve(false);
+            }
+        });
+    });
+}
+
+// Show student selection dialog - FIXED (properly resolves)
 function showStudentSelectionDialog(students) {
     return new Promise((resolve) => {
         const overlay = document.createElement('div');
@@ -851,7 +945,7 @@ function showStudentSelectionDialog(students) {
             <p style="margin:0 0 16px 0;color:#666;font-size:14px;">Pilih nama untuk mendaftarkan wajah ini.</p>
             <input type="text" id="student-select-search" placeholder="Cari nama..." style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:8px;font-size:15px;box-sizing:border-box;margin-bottom:12px;" />
             <div id="student-select-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;"></div>
-            <button id="student-select-cancel" style="margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;cursor:pointer;width:100%;font-size:15px;">Batal</button>
+            <button id="student-select-cancel" style="margin-top:12px;padding:10px;border:1px solid #ddd;border-radius:8px;background:transparent;cursor:pointer;width:100%;font-size:15px;">✕ Batal</button>
         `;
         
         overlay.appendChild(dialog);
@@ -862,7 +956,6 @@ function showStudentSelectionDialog(students) {
         const cancelBtn = dialog.querySelector('#student-select-cancel');
         
         function renderList(filter = '') {
-            // Sort students by name
             const sorted = [...students].sort((a, b) => a[1].localeCompare(b[1]));
             
             const filtered = filter 
@@ -919,15 +1012,12 @@ function showStudentSelectionDialog(students) {
     });
 }
 
-// Register face
-// Register face
 async function registerFace(nis, photoData, descriptor, date, status, kelas) {
     const statusEl = els.faceStatusMsg;
     
     try {
         statusEl.textContent = '📝 Mendaftarkan wajah...';
         
-        // Convert Float32Array to regular array for JSON
         const descriptorArray = Array.from(descriptor);
         
         const result = await apiCall('registerFace', {
@@ -937,8 +1027,10 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
         }, false, 'POST');
         
         if (result.success) {
-            // Update local cache - get name from students list
-            const student = state.students.find(s => s[0].toString() === nis);
+            // Get name from all students list
+            const allStudents = await getAllStudents();
+            const student = allStudents.find(s => s[0].toString() === nis);
+            
             state.faceDescriptors[nis] = {
                 name: student ? student[1] : nis,
                 descriptor: descriptor
@@ -954,7 +1046,7 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
                 nis: nis,
                 date: date,
                 status: status,
-                kelas: kelas
+                kelas: kelas || ''
             }, false, 'POST');
             
             if (attResult.success) {
@@ -962,7 +1054,9 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
                 const statusLabel = status === 'hadir' ? 'Hadir' : 'Terlambat';
                 statusEl.textContent = `✅ ${statusLabel} untuk ${attResult.student.name}`;
                 
-                await loadStudents(kelas, date);
+                if (kelas) {
+                    await loadStudents(kelas, date);
+                }
                 
                 showToast('✅ Absen berhasil', `${attResult.student.name} - ${statusLabel}`, null, false);
                 setTimeout(() => hideToastDelayed(2000), 500);
@@ -973,8 +1067,10 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
         } else {
             statusEl.className = 'status-msg error';
             statusEl.textContent = `❌ Gagal mendaftar: ${result.error || 'Unknown error'}`;
+            console.error('Register failed:', result);
         }
     } catch (error) {
+        console.error('Register error:', error);
         statusEl.className = 'status-msg error';
         statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
     }
