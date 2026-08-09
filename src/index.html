@@ -11,25 +11,9 @@
 </head>
 <body>
 
-<!-- ===== LOGIN SCREEN ===== -->
-<div id="login-screen" class="login-screen">
-    <div class="login-card">
-        <h1>🏫 School Manager</h1>
-        <p class="login-subtitle">Masukkan kode akses</p>
-        <div class="login-input-group">
-            <input type="password" id="password-input" placeholder="Kode akses..." maxlength="20" autofocus />
-            <button id="login-btn" class="primary-btn">Login</button>
-        </div>
-        <div id="login-error" class="login-error" style="display:none;">❌ Kode salah, coba lagi</div>
-        <div class="login-hint">
-            <small>Admin: 007844 · Council: 02123</small>
-        </div>
-    </div>
-</div>
-
-<div id="app" style="display:none;">
+<div id="app">
     <header class="app-header">
-        <h1>School Manager</h1>
+        <h1>🏫 School Manager</h1>
         <div id="connection-status" class="status-online">● Online</div>
     </header>
 
@@ -46,8 +30,7 @@
                 <option value="">Pilih Kelas...</option>
             </select>
             <input type="date" id="date-selector">
-            <script>document.getElementById('date-selector').valueAsDate = new Date();</script>
-            <button id="refresh-btn" class="icon-btn">Refetch</button>
+            <button id="refresh-btn" class="icon-btn">⟳</button>
         </div>
 
         <div id="stats-summary" class="stats-grid" style="display:none;">

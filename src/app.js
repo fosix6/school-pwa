@@ -1,4 +1,4 @@
-// ===== CONFIGURATION =====
+
 const API_URL = '{{APPS_SCRIPT_URL}}';
 
 const CONFIG = {
@@ -6,12 +6,6 @@ const CONFIG = {
     CACHE_DURATION: 60000,
     BATCH_DELAY: 300,
     MAX_CACHE_ITEMS: 10,
-};
-
-// ===== PASSWORDS =====
-const PASSWORDS = {
-    admin: '007844',
-    council: '02123'
 };
 
 // ===== STATE =====
@@ -27,7 +21,6 @@ let state = {
     currentTab: 'today',
     pendingUpdates: [],
     updateTimeout: null,
-    userRole: null, // 'admin' or 'council'
 };
 
 // ===== DOM REFS =====
@@ -67,13 +60,6 @@ const els = {
     markLateBtn: $('mark-late-btn'),
     lateStudentSelect: $('late-student-select'),
     latenessCount: $('lateness-count'),
-    // Login
-    loginScreen: $('login-screen'),
-    appContainer: $('app'),
-    passwordInput: $('password-input'),
-    loginBtn: $('login-btn'),
-    loginError: $('login-error'),
-    // Biometric
     biometricStatus: $('biometric-status'),
     biometricDate: $('biometric-date'),
     biometricScanBtn: $('biometric-scan-btn'),
@@ -89,65 +75,9 @@ const apiCache = new Map();
 const studentListCache = new Map();
 
 // ========================================
-// LOGIN SYSTEM
-// ========================================
-
-function handleLogin() {
-    const password = els.passwordInput.value.trim();
-    
-    if (password === PASSWORDS.admin) {
-        state.userRole = 'admin';
-        showApp();
-    } else if (password === PASSWORDS.council) {
-        state.userRole = 'council';
-        showApp();
-    } else {
-        els.loginError.style.display = 'block';
-        els.passwordInput.value = '';
-        els.passwordInput.focus();
-        setTimeout(() => {
-            els.loginError.style.display = 'none';
-        }, 3000);
-    }
-}
-
-function showApp() {
-    els.loginScreen.style.display = 'none';
-    els.appContainer.style.display = 'block';
-    
-    // Show/hide tabs based on role
-    const adminTab = document.querySelector('.tab-btn[data-tab="admin"]');
-    const biometricTab = document.querySelector('.tab-btn[data-tab="biometric"]');
-    
-    if (state.userRole === 'admin') {
-        adminTab.style.display = 'block';
-        biometricTab.style.display = 'block';
-    } else if (state.userRole === 'council') {
-        adminTab.style.display = 'none';
-        biometricTab.style.display = 'block';
-        // Switch to biometric tab for council
-        switchTab('biometric');
-    }
-    
-    // Initialize app
-    initializeApp();
-}
-
-// Password input enter key
-els.passwordInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        handleLogin();
-    }
-});
-
-els.loginBtn.addEventListener('click', handleLogin);
-
-// ========================================
 // BIOMETRIC SYSTEM (Android Fingerprint)
 // ========================================
 
-// Check if WebAuthn is available (Android fingerprint)
 function isBiometricAvailable() {
     return window.PublicKeyCredential !== undefined && 
            window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== undefined;
@@ -165,7 +95,6 @@ async function checkBiometricSupport() {
     }
 }
 
-// Generate a unique fingerprint ID for this device
 function getDeviceFingerprintId() {
     let id = localStorage.getItem('device_fingerprint_id');
     if (!id) {
@@ -175,7 +104,6 @@ function getDeviceFingerprintId() {
     return id;
 }
 
-// Main biometric scan function
 async function scanBiometric() {
     const statusEl = els.biometricStatusMsg;
     const scanBtn = els.biometricScanBtn;
@@ -186,7 +114,6 @@ async function scanBiometric() {
     scanBtn.disabled = true;
     
     try {
-        // Check support
         const supported = await checkBiometricSupport();
         if (!supported) {
             statusEl.className = 'status-msg error';
@@ -195,7 +122,6 @@ async function scanBiometric() {
             return;
         }
         
-        // Get status and date
         const status = els.biometricStatus.value;
         const date = els.biometricDate.value || new Date().toISOString().split('T')[0];
         
@@ -208,59 +134,14 @@ async function scanBiometric() {
         
         statusEl.textContent = '🖐️ Letakkan jari Anda di sensor...';
         
-        // Create credential for fingerprint authentication
-        // Using a simple challenge-based approach with PublicKeyCredential
-        const challenge = new Uint8Array(32);
-        crypto.getRandomValues(challenge);
-        
-        const publicKeyCredentialCreationOptions = {
-            challenge: challenge,
-            rp: {
-                name: 'School Manager',
-                id: window.location.hostname
-            },
-            user: {
-                id: new TextEncoder().encode(getDeviceFingerprintId()),
-                name: 'school_user',
-                displayName: 'School User'
-            },
-            pubKeyCredParams: [
-                { type: 'public-key', alg: -7 }, // ES256
-                { type: 'public-key', alg: -257 } // RS256
-            ],
-            authenticatorSelection: {
-                authenticatorAttachment: 'platform',
-                userVerification: 'required'
-            },
-            timeout: 30000,
-            attestation: 'none'
-        };
-        
-        // For verification, we use a simple approach:
-        // 1. First try to get the credential (this triggers the fingerprint prompt)
-        // 2. If successful, we check if the user was verified
-        // 3. Then we lookup the NIS from our mapping
-        
-        // Actually, WebAuthn for fingerprint is complex for this use case.
-        // We'll use a simpler approach: store the fingerprint ID in localStorage
-        // and use it as a "device fingerprint" that identifies the user.
-        // The actual fingerprint verification is done by the Android system.
-        
-        // For Android, we can use the Credential Management API or WebAuthn.
-        // A simpler approach for this app: use localStorage + device ID.
-        
-        // Since full WebAuthn is complex for this, we'll use a simpler method:
-        // The user scans their fingerprint, we check if we have a mapping for this device,
-        // and if not, we ask them to select their name.
-        
         const deviceId = getDeviceFingerprintId();
         
-        // Check if we have a mapping for this device
         try {
+            // First, try to find if this device is already registered
             const mappingResult = await apiCall('getFingerprintMapping', { fingerprintId: deviceId }, false);
             
             if (mappingResult.success !== false && mappingResult.nis) {
-                // Found mapping - mark attendance
+                // Found registered student
                 const nis = mappingResult.nis;
                 const kelas = els.classSelector.value;
                 
@@ -277,12 +158,10 @@ async function scanBiometric() {
                     statusEl.className = 'status-msg success';
                     statusEl.textContent = `✅ Absen ${status === 'hadir' ? 'Hadir' : 'Terlambat'} untuk ${result.student.name} (${nis})`;
                     
-                    // Refresh data
                     if (kelas) {
                         await loadStudents(kelas, date);
                     }
                     
-                    // Show success toast
                     showToast('✅ Absen berhasil', `${result.student.name} - ${status === 'hadir' ? 'Hadir' : 'Terlambat'}`, null, false);
                     setTimeout(() => hideToastDelayed(2000), 500);
                 } else {
@@ -290,11 +169,10 @@ async function scanBiometric() {
                     statusEl.textContent = `❌ Gagal absen: ${result.error || 'Unknown error'}`;
                 }
             } else {
-                // No mapping found - ask user to select name
+                // Not registered - ask user to select name
                 statusEl.className = 'status-msg';
                 statusEl.textContent = '👤 Sidik jari belum terdaftar. Pilih nama Anda...';
                 
-                // Show student selector
                 const kelas = els.classSelector.value;
                 if (!kelas) {
                     statusEl.className = 'status-msg error';
@@ -303,7 +181,6 @@ async function scanBiometric() {
                     return;
                 }
                 
-                // Get students for this class
                 const students = state.students || [];
                 if (!students.length) {
                     statusEl.className = 'status-msg error';
@@ -312,11 +189,9 @@ async function scanBiometric() {
                     return;
                 }
                 
-                // Create a selection dialog
                 const selectedNis = await showStudentSelectionDialog(students);
                 
                 if (selectedNis) {
-                    // Register this fingerprint for the selected student
                     statusEl.textContent = '📝 Mendaftarkan sidik jari...';
                     
                     const registerResult = await apiCall('registerBiometric', {
@@ -328,7 +203,6 @@ async function scanBiometric() {
                         statusEl.className = 'status-msg success';
                         statusEl.textContent = `✅ Sidik jari terdaftar untuk ${students.find(s => s[0].toString() === selectedNis)?.[1] || selectedNis}`;
                         
-                        // Now mark attendance
                         statusEl.textContent = '📝 Merekam absen...';
                         
                         const result = await apiCall('markBiometricAttendance', {
@@ -376,10 +250,8 @@ async function scanBiometric() {
     }
 }
 
-// Student selection dialog
 function showStudentSelectionDialog(students) {
     return new Promise((resolve) => {
-        // Create overlay
         const overlay = document.createElement('div');
         overlay.className = 'student-select-overlay';
         overlay.style.cssText = `
@@ -441,6 +313,7 @@ function showStudentSelectionDialog(students) {
                     text-align:left;
                     font-size:14px;
                     transition:background 0.15s;
+                    width:100%;
                 ">${s[1]} <span style="color:#999;font-size:12px;">#${s[0]}</span></button>
             `).join('');
             
@@ -461,7 +334,6 @@ function showStudentSelectionDialog(students) {
             resolve(null);
         });
         
-        // Close on outside click
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) {
                 document.body.removeChild(overlay);
@@ -473,7 +345,6 @@ function showStudentSelectionDialog(students) {
     });
 }
 
-// Register fingerprint manually
 async function registerFingerprintManually() {
     const nis = els.biometricRegisterNis.value.trim();
     const msgEl = els.biometricRegisterMsg;
@@ -490,7 +361,6 @@ async function registerFingerprintManually() {
     msgEl.textContent = '🔍 Memeriksa siswa...';
     
     try {
-        // Check if student exists
         const students = state.students || [];
         const student = students.find(s => s[0].toString() === nis);
         
@@ -524,7 +394,7 @@ async function registerFingerprintManually() {
 }
 
 // ========================================
-// PIKET SCHEDULE BUILDER (Admin Panel)
+// PIKET SCHEDULE BUILDER
 // ========================================
 
 let piketState = {
@@ -629,18 +499,11 @@ function formatDate(iso) {
     return new Date(y, m - 1, d).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
-function getDayIndonesian(day) {
-    const map = { 'Monday': 'Senin', 'Tuesday': 'Selasa', 'Wednesday': 'Rabu', 'Thursday': 'Kamis', 'Friday': 'Jumat' };
-    return map[day] || day;
-}
-
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str == null ? '' : str;
     return div.innerHTML;
 }
-
-function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 // ===== OPTIMIZED API CALL =====
 async function apiCall(action, params = {}, showLoadingToast = true, method = 'GET') {
@@ -654,7 +517,6 @@ async function apiCall(action, params = {}, showLoadingToast = true, method = 'G
         'getHistory': 'Memuat history',
         'uploadCSV': 'Mengupload CSV',
         'saveConfig': 'Menyimpan konfigurasi',
-        'markLateness': 'Mencatat keterlambatan',
         'getStudents': 'Memuat data siswa',
         'registerBiometric': 'Mendaftar sidik jari',
         'verifyBiometric': 'Verifikasi sidik jari',
@@ -826,7 +688,7 @@ async function loadClasses() {
     }
 }
 
-// ===== OPTIMIZED LOAD STUDENTS - SINGLE API CALL =====
+// ===== LOAD STUDENTS =====
 async function loadStudents(kelas, date) {
     if (!kelas) {
         els.studentList.innerHTML = '<p class="empty-state">Pilih kelas untuk mulai</p>';
@@ -855,7 +717,6 @@ async function loadStudents(kelas, date) {
         state.attendance = data.attendance || {};
         state.piket = data.piket || [];
         
-        // Build lateness from attendance - status 'telat'
         const latenessMap = new Map();
         for (const [nis, status] of Object.entries(state.attendance)) {
             if (status === 'telat') {
@@ -1058,7 +919,6 @@ async function markAttendance(nis, status) {
     
     state.attendance[nis] = status;
     
-    // Rebuild lateness from attendance
     const latenessMap = new Map();
     for (const [sNis, sStatus] of Object.entries(state.attendance)) {
         if (sStatus === 'telat') {
@@ -1112,13 +972,7 @@ function updateLatenessSelect() {
     const select = els.lateStudentSelect;
     select.innerHTML = '<option value="">Pilih siswa...</option>';
     
-    // Students who are NOT marked as 'telat' today
-    const lateNIS = new Set();
-    for (const [nis, status] of Object.entries(state.attendance)) {
-        if (status === 'telat') {
-            lateNIS.add(nis);
-        }
-    }
+    const lateNIS = new Set(state.lateness.map(l => l.nis));
     
     state.students.forEach(student => {
         const nis = student[0].toString();
@@ -1169,34 +1023,6 @@ function renderLateness() {
     
     els.latenessList.innerHTML = '';
     els.latenessList.appendChild(fragment);
-}
-
-// ===== MARK LATENESS =====
-async function markLateness() {
-    const select = els.lateStudentSelect;
-    const nis = select.value;
-    if (!nis) {
-        showToast('⚠️ Pilih siswa', 'Silakan pilih siswa yang terlambat', null, true);
-        setTimeout(() => hideToastDelayed(1500), 1000);
-        return;
-    }
-    
-    await markAttendance(nis, 'telat');
-    select.value = '';
-    updateLatenessSelect();
-}
-
-function removeLateness(index) {
-    if (confirm('Hapus catatan keterlambatan ini?')) {
-        state.lateness.splice(index, 1);
-        renderLateness();
-        renderOptimizedStudents();
-        updateStats();
-        updateLatenessSelect();
-        const kelas = els.classSelector.value;
-        const date = els.dateSelector.value;
-        cacheData(kelas, date);
-    }
 }
 
 // ===== RENDER PIKET =====
@@ -1434,7 +1260,8 @@ async function loadHistory() {
                     hadir: 'Hadir',
                     absen: 'Absen',
                     sakit: 'Sakit',
-                    izin: 'Izin'
+                    izin: 'Izin',
+                    telat: 'Terlambat'
                 };
                 const label = statusLabels[record.status] || record.status;
                 html += `
@@ -1447,20 +1274,6 @@ async function loadHistory() {
             html += `</div>`;
         } else {
             html += `<p class="empty-state">Tidak ada data absensi untuk tanggal ini</p>`;
-        }
-        
-        if (data.lateness && data.lateness.length) {
-            html += `<h4>Terlambat</h4>`;
-            html += `<div class="student-grid">`;
-            data.lateness.forEach(record => {
-                html += `
-                    <div class="student-card status-terlambat">
-                        <span class="student-name">${escapeHtml(record.name)}</span>
-                        <span class="student-status-badge status-terlambat">Terlambat</span>
-                    </div>
-                `;
-            });
-            html += `</div>`;
         }
         
         if (data.piket && data.piket.length) {
@@ -1834,6 +1647,7 @@ function setupEventListeners() {
         studentListCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
     });
+    
     els.studentSearch.addEventListener('input', () => {
         renderOptimizedStudents();
     });
@@ -1897,7 +1711,7 @@ function registerSW() {
 }
 
 // ===== INITIALIZATION =====
-function initializeApp() {
+document.addEventListener('DOMContentLoaded', async () => {
     els.dateSelector.value = state.currentDate;
     els.historyDate.value = state.currentDate;
     
@@ -1906,18 +1720,15 @@ function initializeApp() {
     updateOnlineStatus();
     processPendingActions();
     
+    await loadClasses();
+    
+    // Auto-select first class
     setTimeout(async () => {
         if (els.classSelector.options.length > 1) {
             els.classSelector.value = els.classSelector.options[1].value;
             await loadStudents(els.classSelector.value, els.dateSelector.value);
         }
-    }, 100);
-}
-
-// Auto-start login
-document.addEventListener('DOMContentLoaded', () => {
-    // Focus password input
-    els.passwordInput.focus();
+    }, 500);
 });
 
 // ===== PERIODIC SYNC =====
@@ -1936,5 +1747,4 @@ window.togglePiket = togglePiket;
 window.uploadPiketPhoto = uploadPiketPhoto;
 window.openPiketBuilderDialog = openPiketBuilderDialog;
 window.markLateness = markLateness;
-window.removeLateness = removeLateness;
 window.scanBiometric = scanBiometric;
