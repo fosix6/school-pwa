@@ -499,6 +499,7 @@ async function capturePhoto() {
     }
 }
 
+// Process face with descriptor - COMPLETELY FIXED
 async function processFaceWithDescriptor(photoData, descriptor, detection) {
     const statusEl = els.faceStatusMsg;
     
@@ -515,14 +516,38 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         
         statusEl.textContent = '🔍 Membandingkan dengan database semua siswa...';
         
+        // STEP 1: Get ALL students from server
+        let allStudents = [];
+        try {
+            const data = await apiCall('getAllStudents', {}, false);
+            allStudents = data.students || [];
+            console.log('📥 Loaded ALL students:', allStudents.length);
+        } catch (error) {
+            console.error('❌ Failed to load all students:', error);
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = '❌ Gagal memuat data siswa. Periksa koneksi.';
+            return;
+        }
+        
+        if (!allStudents || allStudents.length === 0) {
+            statusEl.className = 'status-msg error';
+            statusEl.textContent = '❌ Tidak ada siswa di database. Import CSV dulu.';
+            return;
+        }
+        
+        // STEP 2: Compare with stored descriptors
         const results = [];
         for (const [nis, data] of Object.entries(state.faceDescriptors)) {
+            // Check if this NIS exists in allStudents
+            const student = allStudents.find(s => s[0].toString() === nis);
+            if (!student) continue; // Skip if student not found
+            
             const distance = faceapi.euclideanDistance(descriptor, data.descriptor);
             const similarity = Math.max(0, 1 - distance);
             
             results.push({
                 nis: nis,
-                name: data.name,
+                name: data.name || student[1],
                 distance: distance,
                 similarity: similarity
             });
@@ -531,6 +556,7 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         results.sort((a, b) => b.similarity - a.similarity);
         
         if (results.length > 0 && results[0].similarity > FACE_MATCH_THRESHOLD) {
+            // MATCH FOUND
             const match = results[0];
             console.log('✅ Face match:', match.name, 'similarity:', match.similarity);
             
@@ -566,24 +592,15 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
                 statusEl.textContent = '⏹️ Dibatalkan';
             }
         } else {
-            // No match found - ask to register
+            // NO MATCH - Ask to register using ALL students
             statusEl.className = 'status-msg';
             statusEl.textContent = '👤 Wajah tidak dikenali. Apakah Anda ingin mendaftar?';
             
             const shouldRegister = await showRegistrationPrompt(photoData);
             
             if (shouldRegister) {
-                // Get ALL students from server
-                statusEl.textContent = '📥 Memuat daftar semua siswa...';
-                const allStudents = await getAllStudents();
-                
-                if (!allStudents || allStudents.length === 0) {
-                    statusEl.className = 'status-msg error';
-                    statusEl.textContent = '❌ Tidak ada siswa di database';
-                    return;
-                }
-                
-                statusEl.textContent = '👤 Pilih nama Anda...';
+                // Use ALL students (already loaded)
+                statusEl.textContent = `👤 Pilih nama Anda dari ${allStudents.length} siswa...`;
                 const selectedNis = await showStudentSelectionDialog(allStudents);
                 
                 if (selectedNis) {
@@ -601,7 +618,7 @@ async function processFaceWithDescriptor(photoData, descriptor, detection) {
         setTimeout(() => closeCamera(), 1500);
         
     } catch (error) {
-        console.error('Face processing error:', error);
+        console.error('❌ Face processing error:', error);
         statusEl.className = 'status-msg error';
         statusEl.textContent = `❌ Error: ${error.message || 'Unknown error'}`;
     }
@@ -1012,6 +1029,7 @@ function showStudentSelectionDialog(students) {
     });
 }
 
+// Register face - COMPLETELY FIXED
 async function registerFace(nis, photoData, descriptor, date, status, kelas) {
     const statusEl = els.faceStatusMsg;
     
@@ -1027,8 +1045,9 @@ async function registerFace(nis, photoData, descriptor, date, status, kelas) {
         }, false, 'POST');
         
         if (result.success) {
-            // Get name from all students list
-            const allStudents = await getAllStudents();
+            // Get ALL students to find name
+            const data = await apiCall('getAllStudents', {}, false);
+            const allStudents = data.students || [];
             const student = allStudents.find(s => s[0].toString() === nis);
             
             state.faceDescriptors[nis] = {
