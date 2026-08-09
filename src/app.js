@@ -435,7 +435,7 @@ function closeCamera() {
     els.cameraContainer.style.display = 'none';
     isCameraOpen = false;
     
-    els.faceScanBtn.innerHTML = '<span class="camera-icon">span> Buka Kamera';
+    els.faceScanBtn.innerHTML = '<span class="camera-icon"></span> Buka Kamera';
     els.faceScanBtn.style.background = '';
     
     const canvas = els.faceOverlay;
