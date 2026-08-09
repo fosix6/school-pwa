@@ -21,9 +21,7 @@
         <button class="tab-btn active" data-tab="today">Hari Ini</button>
         <button class="tab-btn" data-tab="history">History</button>
         <button class="tab-btn" data-tab="admin">Admin</button>
-        <button id="biometric-scan-btn" class="biometric-scan-btn">
-            <span class="fingerprint-icon">🔐</span> Quick Auth (PIN)
-        </button>
+        <button class="tab-btn" data-tab="biometric" id="biometric-tab-btn">🔐 Biometric</button>
     </nav>
 
     <main id="tab-today" class="tab-content active">
@@ -112,31 +110,35 @@
     <!-- ===== BIOMETRIC TAB ===== -->
     <main id="tab-biometric" class="tab-content">
         <div class="card">
-            <h3>🔐 Biometric Attendance</h3>
-            <p>Gunakan sidik jari untuk absen.</p>
+            <h3>🔐 Fingerprint Attendance</h3>
+            <p>Pilih status dan tanggal, lalu scan sidik jari.</p>
             
             <div class="biometric-form">
                 <div class="form-group">
                     <label for="biometric-status">Status</label>
                     <select id="biometric-status">
-                        <option value="hadir">Hadir</option>
-                        <option value="telat">Terlambat</option>
+                        <option value="hadir">✅ Hadir</option>
+                        <option value="telat">⏰ Terlambat</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label for="biometric-date">Tanggal</label>
                     <input type="date" id="biometric-date">
                 </div>
+                
+                <!-- Status message area -->
+                <div id="biometric-status-msg" class="status-msg" style="display:none;"></div>
+                
+                <!-- Scan button -->
                 <button id="biometric-scan-btn" class="biometric-scan-btn">
                     <span class="fingerprint-icon">🖐️</span> Scan Fingerprint
                 </button>
-                <div id="biometric-status-msg" class="status-msg" style="display:none;"></div>
             </div>
             
             <hr />
             
             <div class="biometric-register">
-                <h4>Register Fingerprint</h4>
+                <h4>📝 Register Fingerprint</h4>
                 <p>Untuk siswa yang belum punya sidik jari terdaftar.</p>
                 <div class="form-row">
                     <input type="text" id="biometric-register-nis" placeholder="NIS siswa..." />

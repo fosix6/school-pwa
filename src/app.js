@@ -1778,7 +1778,9 @@ document.getElementById('piket-close-btn').onclick = () => {
 };
 
 // ===== EVENT LISTENERS =====
+// ===== EVENT LISTENERS =====
 function setupEventListeners() {
+    // Tab switching
     els.tabBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             const tab = btn.dataset.tab;
@@ -1786,29 +1788,40 @@ function setupEventListeners() {
         });
     });
     
+    // Class selector
     els.classSelector.addEventListener('change', async () => {
         state.currentClass = els.classSelector.value;
         await loadStudents(state.currentClass, els.dateSelector.value);
     });
     
+    // Date selector
     els.dateSelector.addEventListener('change', async () => {
         state.currentDate = els.dateSelector.value;
         await loadStudents(els.classSelector.value, state.currentDate);
     });
     
+    // Refresh
     els.refreshBtn.addEventListener('click', async () => {
         apiCache.clear();
         studentListCache.clear();
         await loadStudents(els.classSelector.value, els.dateSelector.value);
     });
     
+    // Student search
     els.studentSearch.addEventListener('input', () => {
         renderOptimizedStudents();
     });
     
+    // WhatsApp report
     els.whatsappBtn.addEventListener('click', copyWhatsAppReport);
+    
+    // History
     els.historyLoadBtn.addEventListener('click', loadHistory);
+    
+    // CSV upload
     els.uploadCsvBtn.addEventListener('click', uploadCSV);
+    
+    // Clear cache
     els.clearCacheBtn.addEventListener('click', () => {
         if (confirm('Hapus semua data cache lokal?')) {
             localStorage.clear();
@@ -1822,14 +1835,22 @@ function setupEventListeners() {
         }
     });
     
+    // Mark late
     els.markLateBtn.addEventListener('click', markLateness);
     
-    // Biometric events
-    els.biometricScanBtn.addEventListener('click', scanBiometric);
-    els.biometricRegisterBtn.addEventListener('click', registerFingerprintManually);
+    // BIOMETRIC EVENTS - Make sure these are correct
+    if (els.biometricScanBtn) {
+        els.biometricScanBtn.addEventListener('click', scanBiometric);
+    }
+    
+    if (els.biometricRegisterBtn) {
+        els.biometricRegisterBtn.addEventListener('click', registerFingerprintManually);
+    }
     
     // Set default date for biometric
-    els.biometricDate.value = new Date().toISOString().split('T')[0];
+    if (els.biometricDate) {
+        els.biometricDate.value = new Date().toISOString().split('T')[0];
+    }
 }
 
 // ===== ONLINE/OFFLINE =====
